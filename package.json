@@ -1,0 +1,16 @@
+{
+  "name": "agent-gate",
+  "version": "1.0.0",
+  "description": "Control plane for agent credentials: scoped keys, action checks, audit log, and instant revoke.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "uuid": "^10.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
