@@ -82,6 +82,7 @@
       font-size: 0.85rem;
     }
     .empty { color: var(--muted); font-style: italic; }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
   </style>
 </head>
 <body>
@@ -99,14 +100,10 @@
       <label>Owner</label>
       <input type="text" id="owner" required>
       <label>System</label>
-      <input type="text" id="system" value="http" placeholder="http or github">
+      <input type="text" id="system" value="http" placeholder="http, s3, github">
       <label>Permissions</label>
-      <select id="perm" multiple size="4">
-        <option value="read" selected>read</option>
-        <option value="write">write</option>
-        <option value="delete">delete</option>
-        <option value="execute">execute</option>
-      </select>
+      <input type="text" id="perm" value="read" placeholder="read, s3:list, http:get, read:*">
+      <p class="hint">Comma-separated. Examples: read, write, s3:list, get:mybucket/*, * </p>
       <button type="submit">Create agent</button>
     </form>
     <div id="key-display"></div>
@@ -123,8 +120,8 @@
     <input type="text" id="test-key">
     <label>Action</label>
     <input type="text" id="test-action" value="read">
-    <label>Resource (full URL for http)</label>
-    <input type="text" id="test-resource" placeholder="https://example.com">
+    <label>Resource</label>
+    <input type="text" id="test-resource" placeholder="https://example.com or bucket/key">
     <button onclick="testGate()">Send to gate</button>
     <pre id="gate-result"></pre>
   </section>
@@ -169,7 +166,6 @@
 
     document.getElementById('create-form').onsubmit = async (e) => {
       e.preventDefault();
-      const perms = Array.from(document.getElementById('perm').selectedOptions).map(o => o.value);
       const res = await fetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,7 +173,7 @@
           name: document.getElementById('name').value,
           owner: document.getElementById('owner').value,
           system: document.getElementById('system').value || 'http',
-          permissions: perms
+          permissions: document.getElementById('perm').value
         })
       });
       const data = await res.json();
