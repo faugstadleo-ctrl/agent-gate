@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Gate</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: 0.5rem; }
+    section { margin: 2rem 0; padding: 1rem; border: 1px solid #ddd; border-radius: 8px; }
+    input, button, select { margin: 0.25rem; padding: 0.5rem; }
+    pre { background: #f5f5f5; padding: 1rem; overflow-x: auto; }
+    .key { background: #e8f5e9; padding: 0.5rem; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Agent Gate</h1>
+  <p>Scoped keys for agents. Real credentials stay on the server. Every action is checked, logged, and revocable.</p>
+
+  <section>
+    <h2>Create Agent</h2>
+    <form id="create-form">
+      <input type="text" id="name" placeholder="Agent name" required>
+      <input type="text" id="owner" placeholder="Owner" required>
+      <select id="perm" multiple>
+        <option value="read">read</option>
+        <option value="write">write</option>
+        <option value="delete">delete</option>
+      </select>
+      <button type="submit">Create</button>
+    </form>
+    <div id="key-display"></div>
+  </section>
+
+  <section>
+    <h2>Agents</h2>
+    <button onclick="loadAgents()">Refresh</button>
+    <div id="agents"></div>
+  </section>
+
+  <section>
+    <h2>Test Gate</h2>
+    <input type="text" id="test-key" placeholder="Agent key">
+    <input type="text" id="test-action" placeholder="action (read/write/delete)">
+    <input type="text" id="test-resource" placeholder="resource">
+    <button onclick="testGate()">Call Gate</button>
+    <pre id="gate-result"></pre>
+  </section>
+
+  <section>
+    <h2>Recent Logs</h2>
+    <button onclick="loadLogs()">Refresh</button>
+    <pre id="logs"></pre>
+  </section>
+
+  <script>
+    async function loadAgents() {
+      const res = await fetch('/api/agents');
+      const data = await res.json();
+      document.getElementById('agents').innerHTML = data.map(a =>
+        `<div>${a.name} (${a.owner}) - ${a.active ? 'active' : 'killed'} 
+         <button onclick="killAgent('${a.id}')">Kill</button></div>`
+      ).join('');
+    }
+
+    async function killAgent(id) {
+      await fetch(`/api/agents/${id}/kill`, { method: 'POST' });
+      loadAgents();
+    }
+
+    document.getElementById('create-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const perms = Array.from(document.getElementById('perm').selectedOptions).map(o => o.value);
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: document.getElementById('name').value,
+          owner: document.getElementById('owner').value,
+          permissions: perms
+        })
+      });
+      const data = await res.json();
+      document.getElementById('key-display').innerHTML =
+        `<p>Key (shown once):</p><div class="key">${data.key}</div>`;
+      loadAgents();
+    };
+
+    async function testGate() {
+      const res = await fetch('/api/gate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: document.getElementById('test-key').value,
+          action: document.getElementById('test-action').value,
+          resource: document.getElementById('test-resource').value
+        })
+      });
+      const data = await res.json();
+      document.getElementById('gate-result').textContent = JSON.stringify(data, null, 2);
+      loadLogs();
+    }
+
+    async function loadLogs() {
+      const res = await fetch('/api/logs');
+      const data = await res.json();
+      document.getElementById('logs').textContent = JSON.stringify(data, null, 2);
+    }
+
+    loadAgents();
+    loadLogs();
+  </script>
+</body>
+</html>
