@@ -95,42 +95,56 @@
     }
     footer a { color: var(--muted); text-decoration: none; margin: 0 0.5rem; }
     footer a:hover { color: var(--text); }
-    .cookie {
+    .overlay {
       position: fixed;
-      bottom: 1.5rem;
-      left: 50%;
-      transform: translateX(-50%);
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 1rem 1.5rem;
+      padding: 2rem;
+      max-width: 480px;
+      width: 90%;
+    }
+    .modal h2 { margin-bottom: 0.75rem; font-size: 1.3rem; }
+    .modal p { color: var(--muted); margin-bottom: 1.25rem; font-size: 0.95rem; }
+    .options { margin-bottom: 1.5rem; }
+    .options label {
       display: flex;
       align-items: center;
-      gap: 1.5rem;
-      max-width: 560px;
-      z-index: 100;
+      gap: 0.5rem;
+      margin: 0.5rem 0;
+      font-size: 0.95rem;
+      cursor: pointer;
     }
-    .cookie p { font-size: 0.9rem; color: var(--muted); }
-    .cookie button {
-      background: var(--accent);
-      color: #000;
-      border: none;
-      padding: 0.5rem 1rem;
+    .options input { width: auto; }
+    .buttons { display: flex; gap: 0.75rem; }
+    .buttons button {
+      flex: 1;
+      padding: 0.6rem;
       border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
       cursor: pointer;
       font-weight: 500;
     }
-    .cookie button.secondary {
-      background: transparent;
-      color: var(--text);
-      border: 1px solid var(--border);
+    .buttons button.primary {
+      background: var(--accent);
+      color: #000;
+      border: none;
     }
     @media (max-width: 800px) {
       nav { padding: 1.25rem 1.5rem; }
       .hero { padding: 5rem 1.5rem 3rem; }
       .hero h1 { font-size: 2.5rem; }
       .grid { grid-template-columns: 1fr; padding: 0 1.5rem 4rem; }
-      .cookie { flex-direction: column; text-align: center; left: 1rem; right: 1rem; transform: none; }
     }
   </style>
 </head>
@@ -171,21 +185,37 @@
     <div style="margin-top: 0.75rem;">Agent Gate · Control plane for agent credentials</div>
   </footer>
 
-  <div id="cookie" class="cookie" style="display:none;">
-    <p>We use a single cookie to remember your preference. No tracking.</p>
-    <div>
-      <button onclick="setCookie('accepted')">Accept</button>
-      <button class="secondary" onclick="setCookie('rejected')">Reject</button>
+  <div id="overlay" class="overlay" style="display:none;">
+    <div class="modal">
+      <h2>Cookie preferences</h2>
+      <p>Choose what we may store. The site cannot be used until you make a selection.</p>
+      <div class="options">
+        <label><input type="checkbox" id="essential" checked disabled> Essential (required to remember this choice)</label>
+        <label><input type="checkbox" id="analytics"> Analytics (usage statistics)</label>
+        <label><input type="checkbox" id="preferences"> Preferences (UI settings)</label>
+      </div>
+      <div class="buttons">
+        <button onclick="saveCookie(false)">Reject all</button>
+        <button class="primary" onclick="saveCookie(true)">Accept selected</button>
+      </div>
     </div>
   </div>
 
   <script>
     if (!localStorage.getItem('cookie_choice')) {
-      document.getElementById('cookie').style.display = 'flex';
+      document.getElementById('overlay').style.display = 'flex';
+      document.body.style.overflow = 'hidden';
     }
-    async function setCookie(choice) {
-      localStorage.setItem('cookie_choice', choice);
-      document.getElementById('cookie').style.display = 'none';
+    async function saveCookie(accepted) {
+      const choice = {
+        essential: true,
+        analytics: accepted && document.getElementById('analytics').checked,
+        preferences: accepted && document.getElementById('preferences').checked,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem('cookie_choice', JSON.stringify(choice));
+      document.getElementById('overlay').style.display = 'none';
+      document.body.style.overflow = '';
       await fetch('/api/cookie', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
