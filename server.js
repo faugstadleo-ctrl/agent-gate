@@ -64,7 +64,7 @@ systems.set('http', {
 });
 
 if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-  const region = (process.env.AWS_REGION || 'us-east-1').trim();
+  const region = (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1').trim();
   const s3 = new S3Client({
     region,
     credentials: {
