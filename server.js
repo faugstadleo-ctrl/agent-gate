@@ -28,6 +28,7 @@ let logs = [];
 const inflight = new Map();
 const seenNonces = new Set();
 const rateWarnSent = new Set();
+const mcpSessions = new Map(); // sessionId -> agent key
 
 function loadData() {
   try {
@@ -122,6 +123,10 @@ function checkReplay(timestamp, nonce) {
     setTimeout(() => seenNonces.delete(nonce), 10 * 60 * 1000);
   }
   return true;
+}
+
+function errorResponse(id, code, message, retryable = false) {
+  return { jsonrpc: '2.0', id, error: { code, message, data: { retryable } } };
 }
 
 const systems = new Map();
@@ -261,11 +266,23 @@ app.post('/mcp', async (req, res) => {
   const body = req.body;
   const id = body.id;
   const method = body.method;
+  const sessionId = req.headers['mcp-session-id'] || body.params?.sessionId;
   const auth = req.headers.authorization || '';
-  const key = auth.startsWith('Bearer ') ? auth.slice(7) : (body.params && body.params.key);
+  let key = auth.startsWith('Bearer ') ? auth.slice(7) : (body.params && body.params.key);
+  if (!key && sessionId) key = mcpSessions.get(sessionId);
 
   if (method === 'initialize') {
-    return res.json({ jsonrpc: '2.0', id, result: { protocolVersion: '2024-11-05', capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'agent-gate', version: '1.0.0' } } });
+    const newSession = uuidv4();
+    if (key) mcpSessions.set(newSession, key);
+    return res.json({
+      jsonrpc: '2.0', id,
+      result: {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'agent-gate', version: '1.0.0' },
+        sessionId: newSession
+      }
+    });
   }
 
   if (method === 'tools/list') {
@@ -285,9 +302,9 @@ app.post('/mcp', async (req, res) => {
   }
 
   if (method === 'tools/call') {
-    if (!key) return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Agent key required' } });
+    if (!key) return res.json(errorResponse(id, -32000, 'Agent key required (Authorization header or session)', false));
     const agent = Array.from(agents.values()).find(a => a.key === key);
-    if (!agent || !agent.active) return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Invalid or killed key' } });
+    if (!agent || !agent.active) return res.json(errorResponse(id, -32001, 'Invalid or killed key', false));
 
     const toolName = body.params && body.params.name;
     const args = (body.params && body.params.arguments) || {};
@@ -302,37 +319,52 @@ app.post('/mcp', async (req, res) => {
     else if (toolName === 'slack_post') { system = 'slack'; action = 'post'; resource = args.channel; extra.text = args.text; }
     else if (toolName === 'slack_list_channels') { system = 'slack'; action = 'list_channels'; resource = 'channels'; }
     else if (toolName === 'http_get') { system = 'http'; action = 'read'; resource = args.url; }
-    else return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Unknown tool' } });
+    else return res.json(errorResponse(id, -32601, 'Unknown tool', false));
 
     if (!isAllowed(agent.permissions, action, resource)) {
       logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'refused' });
       saveData();
       await notify('refused', { agentId: agent.id, action, resource });
-      return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'Action not permitted' }], isError: true } });
+      return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'Action not permitted' }], isError: true, structuredContent: { error: 'permission_denied', retryable: false } } });
     }
 
     try {
       const result = await executeGated(agent, system, action, resource, extra, req);
       logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'allowed', detail: result });
       saveData();
-      return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false } });
+      return res.json({
+        jsonrpc: '2.0', id,
+        result: {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+          structuredContent: result,
+          isError: false
+        }
+      });
     } catch (err) {
       logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'error', detail: err.message });
       saveData();
-      return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: err.message }], isError: true } });
+      const retryable = err.message.includes('limit') || err.message.includes('timeout');
+      return res.json({
+        jsonrpc: '2.0', id,
+        result: {
+          content: [{ type: 'text', text: err.message }],
+          structuredContent: { error: err.message, retryable },
+          isError: true
+        }
+      });
     }
   }
 
-  res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } });
+  res.json(errorResponse(id, -32601, 'Method not found', false));
 });
 
 app.post('/api/gate', async (req, res) => {
   const { key, action, resource, system } = req.body;
-  if (!key) return res.status(400).json({ error: 'key required' });
+  if (!key) return res.status(400).json({ error: 'key required', code: 'missing_key', retryable: false });
   const agent = Array.from(agents.values()).find(a => a.key === key);
   const entry = { timestamp: new Date().toISOString(), agentId: agent?.id || null, system: system || agent?.system || 'http', action, resource, result: 'refused' };
-  if (!agent || !agent.active) { logs.push(entry); saveData(); return res.status(403).json({ error: 'invalid or killed key' }); }
-  if (!isAllowed(agent.permissions, action, resource)) { logs.push(entry); saveData(); await notify('refused', { agentId: agent.id, action, resource }); return res.status(403).json({ error: 'action not permitted' }); }
+  if (!agent || !agent.active) { logs.push(entry); saveData(); return res.status(403).json({ error: 'invalid or killed key', code: 'invalid_key', retryable: false }); }
+  if (!isAllowed(agent.permissions, action, resource)) { logs.push(entry); saveData(); await notify('refused', { agentId: agent.id, action, resource }); return res.status(403).json({ error: 'action not permitted', code: 'permission_denied', retryable: false }); }
   try {
     const result = await executeGated(agent, entry.system, action, resource, {}, req);
     entry.result = 'allowed'; entry.detail = result;
@@ -341,7 +373,8 @@ app.post('/api/gate', async (req, res) => {
   } catch (err) {
     entry.result = 'error'; entry.detail = err.message;
     logs.push(entry); saveData();
-    return res.status(502).json({ error: 'action failed', detail: err.message });
+    const retryable = err.message.includes('limit') || err.message.includes('timeout');
+    return res.status(502).json({ error: 'action failed', detail: err.message, code: 'execution_error', retryable });
   }
 });
 
