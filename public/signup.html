@@ -14,35 +14,69 @@
       --accent: #ffffff;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    form { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); min-width: 320px; }
-    h2 { margin-bottom: 1.5rem; font-weight: 600; }
-    input, button { display: block; margin: 0.6rem 0; padding: 0.7rem; width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 1rem; }
-    button { background: var(--accent); color: #000; border: none; font-weight: 500; cursor: pointer; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 2rem; }
+    form { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); width: 100%; max-width: 420px; }
+    h2 { margin-bottom: 0.5rem; font-weight: 600; }
+    .plan { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
+    input { display: block; width: 100%; padding: 0.7rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 1rem; }
+    input:focus { outline: none; border-color: #888; }
+    button { display: block; width: 100%; margin-top: 1.25rem; padding: 0.75rem; background: var(--accent); color: #000; border: none; border-radius: 4px; font-size: 1rem; font-weight: 500; cursor: pointer; }
     button:hover { opacity: 0.9; }
-    .error { color: #ff5555; margin-top: 0.5rem; font-size: 0.9rem; }
+    .error { color: #ff5555; margin-top: 0.75rem; font-size: 0.9rem; }
     a { color: var(--muted); font-size: 0.9rem; }
+    .row { display: flex; gap: 0.75rem; }
+    .row input { flex: 1; }
   </style>
 </head>
 <body>
   <form id="signup">
     <h2>Create account</h2>
-    <input name="username" placeholder="Username" required>
-    <input name="password" type="password" placeholder="Password" required>
+    <div class="plan" id="plan-label"></div>
+
+    <label>Username</label>
+    <input name="username" required>
+
+    <label>Email</label>
+    <input name="email" type="email" required>
+
+    <label>Password</label>
+    <input name="password" type="password" required>
+
+    <label>Business name</label>
+    <input name="business">
+
+    <label>Address</label>
+    <input name="address" placeholder="Street, city, country">
+
+    <label>Phone (optional)</label>
+    <input name="phone" type="tel">
+
     <button type="submit">Continue</button>
     <div id="error" class="error"></div>
-    <p style="margin-top: 1rem;"><a href="/login">Already have an account?</a></p>
+    <p style="margin-top: 1.25rem;"><a href="/login">Already have an account?</a></p>
   </form>
   <script>
     const params = new URLSearchParams(location.search);
     const plan = params.get('plan') || 'starter';
+    document.getElementById('plan-label').textContent = plan === 'team' ? 'Team plan — $49/month' : 'Starter plan — free';
+
     document.getElementById('signup').onsubmit = async (e) => {
       e.preventDefault();
       const form = e.target;
+      const body = {
+        username: form.username.value,
+        email: form.email.value,
+        password: form.password.value,
+        business: form.business.value,
+        address: form.address.value,
+        phone: form.phone.value,
+        plan
+      };
       const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: form.username.value, password: form.password.value, plan })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (!res.ok) {
