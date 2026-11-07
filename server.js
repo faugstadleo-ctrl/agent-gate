@@ -26,6 +26,7 @@ let agents = new Map();
 let logs = [];
 let users = new Map();
 let audit = [];
+let cookieLogs = [];
 const inflight = new Map();
 const seenNonces = new Set();
 const rateWarnSent = new Set();
@@ -39,11 +40,12 @@ function loadData() {
       logs = data.logs || [];
       users = new Map(data.users || []);
       audit = data.audit || [];
+      cookieLogs = data.cookieLogs || [];
     }
   } catch (e) { console.error('Load failed', e); }
 }
 function saveData() {
-  const data = { agents: Array.from(agents.entries()), logs: logs.slice(-500), users: Array.from(users.entries()), audit: audit.slice(-200) };
+  const data = { agents: Array.from(agents.entries()), logs: logs.slice(-500), users: Array.from(users.entries()), audit: audit.slice(-200), cookieLogs: cookieLogs.slice(-500) };
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 loadData();
@@ -392,6 +394,13 @@ app.post('/api/gate', async (req, res) => {
   }
 });
 
+app.post('/api/cookie', (req, res) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  cookieLogs.push({ timestamp: new Date().toISOString(), choice: req.body.choice, ip });
+  saveData();
+  res.json({ ok: true });
+});
+
 function requireAuth(req, res, next) {
   if (req.session && req.session.authed) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'login required' });
@@ -403,8 +412,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });
 
+app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+
 app.get('/login', (req, res) => {
-  res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body{background:#050505;color:#f5f5f5;font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}form{background:#0c0c0c;padding:2.5rem;border-radius:12px;border:1px solid #1f1f1f;min-width:280px}h2{margin:0 0 1.5rem;font-weight:600;letter-spacing:-0.02em}input,button{display:block;margin:0.6rem 0;padding:0.7rem;width:100%;background:#050505;color:#f5f5f5;border:1px solid #1f1f1f;border-radius:6px;font-size:1rem}button{background:#fff;color:#000;border:none;font-weight:500;cursor:pointer}button:hover{opacity:0.9}</style></head><body><form method="POST" action="/login"><h2>Agent Gate</h2><input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required><button>Login</button></form></body></html>`);
+  res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body{background:#000;color:#e0e0e0;font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}form{background:#111;padding:2.5rem;border-radius:8px;border:1px solid #555;min-width:280px}h2{margin:0 0 1.5rem;font-weight:600}input,button{display:block;margin:0.6rem 0;padding:0.7rem;width:100%;background:#000;color:#e0e0e0;border:1px solid #555;border-radius:4px;font-size:1rem}button{background:#fff;color:#000;border:none;font-weight:500;cursor:pointer}button:hover{opacity:0.9}</style></head><body><form method="POST" action="/login"><h2>Agent Gate</h2><input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required><button>Login</button></form></body></html>`);
 });
 
 app.post('/login', (req, res) => {
@@ -543,7 +555,7 @@ app.post('/api/agents/:id/rotate', (req, res) => {
 });
 
 app.get('/api/backup', (req, res) => {
-  const data = { agents: Array.from(agents.entries()), logs, users: Array.from(users.entries()), audit };
+  const data = { agents: Array.from(agents.entries()), logs, users: Array.from(users.entries()), audit, cookieLogs };
   res.setHeader('Content-Disposition', 'attachment; filename="agent-gate-backup.json"');
   res.setHeader('Content-Type', 'application/json');
   res.send(JSON.stringify(data, null, 2));
@@ -551,12 +563,13 @@ app.get('/api/backup', (req, res) => {
 
 app.post('/api/restore', (req, res) => {
   if (req.session.user !== 'admin') return res.status(403).json({ error: 'admin only' });
-  const { agents: a, logs: l, users: u, audit: au } = req.body;
+  const { agents: a, logs: l, users: u, audit: au, cookieLogs: cl } = req.body;
   if (!a || !Array.isArray(a)) return res.status(400).json({ error: 'invalid backup' });
   agents = new Map(a);
   logs = l || [];
   if (u) users = new Map(u);
   if (au) audit = au;
+  if (cl) cookieLogs = cl;
   saveData();
   logAudit(req.session.user, 'restore', {});
   res.json({ message: 'Restored', agents: agents.size, logs: logs.length });
@@ -589,6 +602,11 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/audit', (req, res) => {
   if (req.session.user !== 'admin') return res.status(403).json({ error: 'admin only' });
   res.json(audit.slice(-100));
+});
+
+app.get('/api/cookies', (req, res) => {
+  if (req.session.user !== 'admin') return res.status(403).json({ error: 'admin only' });
+  res.json(cookieLogs.slice(-100));
 });
 
 app.listen(PORT, () => console.log(`Agent Gate listening on port ${PORT}`));
