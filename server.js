@@ -72,13 +72,11 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
     }
   });
-
   systems.set('s3', {
     handler: async (action, resource, extra) => {
       const [bucket, ...keyParts] = (resource || '').split('/');
       const key = keyParts.join('/');
       if (!bucket) throw new Error('resource must be bucket or bucket/key');
-
       if (action === 'list' || (action === 'read' && !key)) {
         const cmd = new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 50 });
         const out = await s3.send(cmd);
@@ -92,13 +90,11 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
       }
       if (action === 'put' || action === 'write') {
         const body = extra?.body || '';
-        const cmd = new PutObjectCommand({ Bucket: bucket, Key: key, Body: body });
-        await s3.send(cmd);
+        await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body }));
         return { uploaded: key };
       }
       if (action === 'delete') {
-        const cmd = new DeleteObjectCommand({ Bucket: bucket, Key: key });
-        await s3.send(cmd);
+        await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
         return { deleted: key };
       }
       throw new Error('unsupported s3 action');
@@ -108,23 +104,65 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
 
 if (process.env.GITHUB_TOKEN) {
   systems.set('github', {
-    credentials: process.env.GITHUB_TOKEN,
-    handler: async (action, resource) => {
+    handler: async (action, resource, extra) => {
       const [owner, repo, ...rest] = (resource || '').split('/');
-      if (!owner || !repo) throw new Error('resource must be owner/repo[/path]');
-      let url = `https://api.github.com/repos/${owner}/${repo}`;
+      if (!owner || !repo) throw new Error('resource must be owner/repo[/...]');
+      const base = `https://api.github.com/repos/${owner}/${repo}`;
+      const headers = {
+        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'agent-gate'
+      };
+      if (action === 'create_issue') {
+        const res = await fetch(`${base}/issues`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: extra.title, body: extra.body || '' })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(JSON.stringify(data).slice(0, 300));
+        return { number: data.number, url: data.html_url };
+      }
+      if (action === 'list_prs') {
+        const res = await fetch(`${base}/pulls?state=open`, { headers });
+        const data = await res.json();
+        if (!res.ok) throw new Error(JSON.stringify(data).slice(0, 300));
+        return { prs: data.slice(0, 20).map(p => ({ number: p.number, title: p.title })) };
+      }
+      // default GET
+      let url = base;
       if (rest.length) url += '/' + rest.join('/');
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-          Accept: 'application/vnd.github+json',
-          'User-Agent': 'agent-gate'
-        }
-      });
+      const res = await fetch(url, { headers });
       const body = await res.text();
       if (!res.ok) throw new Error(`GitHub ${res.status}: ${body.slice(0, 300)}`);
       return { status: res.status, body: body.slice(0, 2000) };
+    }
+  });
+}
+
+if (process.env.SLACK_BOT_TOKEN) {
+  systems.set('slack', {
+    handler: async (action, resource, extra) => {
+      const token = process.env.SLACK_BOT_TOKEN;
+      if (action === 'post') {
+        const res = await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: resource, text: extra.text })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        return { ts: data.ts, channel: data.channel };
+      }
+      if (action === 'list_channels') {
+        const res = await fetch('https://slack.com/api/conversations.list', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        return { channels: (data.channels || []).slice(0, 30).map(c => ({ id: c.id, name: c.name })) };
+      }
+      throw new Error('unsupported slack action');
     }
   });
 }
@@ -155,7 +193,11 @@ app.post('/mcp', async (req, res) => {
       { name: 's3_get', description: 'Get an object from S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' } }, required: ['bucket', 'key'] } },
       { name: 's3_put', description: 'Upload an object to S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' }, body: { type: 'string' } }, required: ['bucket', 'key', 'body'] } },
       { name: 's3_delete', description: 'Delete an object from S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' } }, required: ['bucket', 'key'] } },
-      { name: 'github_get', description: 'GET a GitHub API path (owner/repo or owner/repo/contents/path)', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+      { name: 'github_get', description: 'GET a GitHub path (owner/repo or owner/repo/...)', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+      { name: 'github_create_issue', description: 'Create a GitHub issue', inputSchema: { type: 'object', properties: { repo: { type: 'string', description: 'owner/repo' }, title: { type: 'string' }, body: { type: 'string' } }, required: ['repo', 'title'] } },
+      { name: 'github_list_prs', description: 'List open PRs', inputSchema: { type: 'object', properties: { repo: { type: 'string' } }, required: ['repo'] } },
+      { name: 'slack_post', description: 'Post a message to a Slack channel', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, text: { type: 'string' } }, required: ['channel', 'text'] } },
+      { name: 'slack_list_channels', description: 'List Slack channels', inputSchema: { type: 'object', properties: {} } },
       { name: 'http_get', description: 'HTTP GET a URL', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } }
     ];
     return res.json({ jsonrpc: '2.0', id, result: { tools } });
@@ -169,12 +211,16 @@ app.post('/mcp', async (req, res) => {
     const toolName = body.params && body.params.name;
     const args = (body.params && body.params.arguments) || {};
 
-    let action, resource, system, extra;
+    let action, resource, system, extra = {};
     if (toolName === 's3_list') { system = 's3'; action = 'list'; resource = args.bucket; }
     else if (toolName === 's3_get') { system = 's3'; action = 'get'; resource = `${args.bucket}/${args.key}`; }
-    else if (toolName === 's3_put') { system = 's3'; action = 'put'; resource = `${args.bucket}/${args.key}`; extra = { body: args.body }; }
+    else if (toolName === 's3_put') { system = 's3'; action = 'put'; resource = `${args.bucket}/${args.key}`; extra.body = args.body; }
     else if (toolName === 's3_delete') { system = 's3'; action = 'delete'; resource = `${args.bucket}/${args.key}`; }
     else if (toolName === 'github_get') { system = 'github'; action = 'read'; resource = args.path; }
+    else if (toolName === 'github_create_issue') { system = 'github'; action = 'create_issue'; resource = args.repo; extra.title = args.title; extra.body = args.body; }
+    else if (toolName === 'github_list_prs') { system = 'github'; action = 'list_prs'; resource = args.repo; }
+    else if (toolName === 'slack_post') { system = 'slack'; action = 'post'; resource = args.channel; extra.text = args.text; }
+    else if (toolName === 'slack_list_channels') { system = 'slack'; action = 'list_channels'; resource = 'channels'; }
     else if (toolName === 'http_get') { system = 'http'; action = 'read'; resource = args.url; }
     else return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Unknown tool' } });
 
@@ -185,7 +231,7 @@ app.post('/mcp', async (req, res) => {
     }
 
     const backend = systems.get(system);
-    if (!backend) return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'Backend not configured' }], isError: true } });
+    if (!backend) return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'Backend not configured (set the token/env var)' }], isError: true } });
 
     try {
       const result = await backend.handler(action, resource, extra);
@@ -207,10 +253,8 @@ app.post('/api/gate', async (req, res) => {
   if (!key) return res.status(400).json({ error: 'key required' });
   const agent = Array.from(agents.values()).find(a => a.key === key);
   const entry = { timestamp: new Date().toISOString(), agentId: agent?.id || null, system: system || agent?.system || 'http', action, resource, result: 'refused' };
-
   if (!agent || !agent.active) { logs.push(entry); saveData(); return res.status(403).json({ error: 'invalid or killed key' }); }
   if (!isAllowed(agent.permissions, action, resource)) { logs.push(entry); saveData(); return res.status(403).json({ error: 'action not permitted' }); }
-
   const backend = systems.get(entry.system);
   if (backend && backend.handler) {
     try {
