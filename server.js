@@ -121,7 +121,126 @@ if (process.env.GITHUB_TOKEN) {
   });
 }
 
-// Agent-facing gate — no login required, only the agent key
+// MCP endpoint — agents connect here
+app.post('/mcp', async (req, res) => {
+  const body = req.body;
+  const id = body.id;
+  const method = body.method;
+
+  // Extract agent key from Authorization header or body
+  const auth = req.headers.authorization || '';
+  const key = auth.startsWith('Bearer ') ? auth.slice(7) : (body.params && body.params.key);
+
+  if (method === 'initialize') {
+    return res.json({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'agent-gate', version: '1.0.0' }
+      }
+    });
+  }
+
+  if (method === 'tools/list') {
+    const tools = [
+      {
+        name: 's3_list',
+        description: 'List objects in an S3 bucket',
+        inputSchema: {
+          type: 'object',
+          properties: { bucket: { type: 'string', description: 'Bucket name' } },
+          required: ['bucket']
+        }
+      },
+      {
+        name: 's3_get',
+        description: 'Get an object from S3',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            bucket: { type: 'string' },
+            key: { type: 'string' }
+          },
+          required: ['bucket', 'key']
+        }
+      },
+      {
+        name: 'http_get',
+        description: 'Perform an HTTP GET',
+        inputSchema: {
+          type: 'object',
+          properties: { url: { type: 'string' } },
+          required: ['url']
+        }
+      }
+    ];
+    return res.json({ jsonrpc: '2.0', id, result: { tools } });
+  }
+
+  if (method === 'tools/call') {
+    if (!key) {
+      return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Agent key required (Authorization: Bearer <key>)' } });
+    }
+    const agent = Array.from(agents.values()).find(a => a.key === key);
+    if (!agent || !agent.active) {
+      return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Invalid or killed key' } });
+    }
+
+    const toolName = body.params && body.params.name;
+    const args = (body.params && body.params.arguments) || {};
+
+    let action, resource, system;
+    if (toolName === 's3_list') {
+      system = 's3'; action = 'list'; resource = args.bucket;
+    } else if (toolName === 's3_get') {
+      system = 's3'; action = 'get'; resource = `${args.bucket}/${args.key}`;
+    } else if (toolName === 'http_get') {
+      system = 'http'; action = 'read'; resource = args.url;
+    } else {
+      return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Unknown tool' } });
+    }
+
+    if (!isAllowed(agent.permissions, action, resource)) {
+      const entry = { timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'refused' };
+      logs.push(entry); saveData();
+      return res.json({
+        jsonrpc: '2.0', id,
+        result: { content: [{ type: 'text', text: 'Action not permitted' }], isError: true }
+      });
+    }
+
+    const backend = systems.get(system);
+    if (!backend) {
+      return res.json({
+        jsonrpc: '2.0', id,
+        result: { content: [{ type: 'text', text: 'Backend not available' }], isError: true }
+      });
+    }
+
+    try {
+      const result = await backend.handler(action, resource);
+      const entry = { timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'allowed', detail: result };
+      logs.push(entry); saveData();
+      return res.json({
+        jsonrpc: '2.0', id,
+        result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false }
+      });
+    } catch (err) {
+      const entry = { timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'error', detail: err.message };
+      logs.push(entry); saveData();
+      return res.json({
+        jsonrpc: '2.0', id,
+        result: { content: [{ type: 'text', text: err.message }], isError: true }
+      });
+    }
+  }
+
+  res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } });
+});
+
+// Existing /api/gate for non-MCP callers
 app.post('/api/gate', async (req, res) => {
   const { key, action, resource, system } = req.body;
   if (!key) return res.status(400).json({ error: 'key required' });
