@@ -3,7 +3,7 @@ const cookieSession = require('cookie-session');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
-const { S3Client, ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
@@ -74,25 +74,34 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
   });
 
   systems.set('s3', {
-    handler: async (action, resource) => {
+    handler: async (action, resource, extra) => {
       const [bucket, ...keyParts] = (resource || '').split('/');
       const key = keyParts.join('/');
       if (!bucket) throw new Error('resource must be bucket or bucket/key');
 
-      if ((action === 'list' || action === 'read') && !key) {
-        const cmd = new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 20 });
+      if (action === 'list' || (action === 'read' && !key)) {
+        const cmd = new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 50 });
         const out = await s3.send(cmd);
-        return { objects: (out.Contents || []).map(o => o.Key) };
+        return { objects: (out.Contents || []).map(o => ({ key: o.Key, size: o.Size })) };
       }
-
-      if ((action === 'get' || action === 'read') && key) {
+      if (action === 'get' || (action === 'read' && key)) {
         const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
         const out = await s3.send(cmd);
         const body = await out.Body.transformToString();
-        return { key, body: body.slice(0, 500) };
+        return { key, body: body.slice(0, 2000) };
       }
-
-      throw new Error('s3 supports list/read (bucket) or get/read (bucket/key)');
+      if (action === 'put' || action === 'write') {
+        const body = extra?.body || '';
+        const cmd = new PutObjectCommand({ Bucket: bucket, Key: key, Body: body });
+        await s3.send(cmd);
+        return { uploaded: key };
+      }
+      if (action === 'delete') {
+        const cmd = new DeleteObjectCommand({ Bucket: bucket, Key: key });
+        await s3.send(cmd);
+        return { deleted: key };
+      }
+      throw new Error('unsupported s3 action');
     }
   });
 }
@@ -103,9 +112,8 @@ if (process.env.GITHUB_TOKEN) {
     handler: async (action, resource) => {
       const [owner, repo, ...rest] = (resource || '').split('/');
       if (!owner || !repo) throw new Error('resource must be owner/repo[/path]');
-      const url = rest.length
-        ? `https://api.github.com/repos/${owner}/${repo}/${rest.join('/')}`
-        : `https://api.github.com/repos/${owner}/${repo}`;
+      let url = `https://api.github.com/repos/${owner}/${repo}`;
+      if (rest.length) url += '/' + rest.join('/');
       const res = await fetch(url, {
         method: 'GET',
         headers: {
@@ -115,26 +123,24 @@ if (process.env.GITHUB_TOKEN) {
         }
       });
       const body = await res.text();
-      if (!res.ok) throw new Error(`GitHub ${res.status}: ${body.slice(0, 200)}`);
-      return { status: res.status, body: body.slice(0, 500) };
+      if (!res.ok) throw new Error(`GitHub ${res.status}: ${body.slice(0, 300)}`);
+      return { status: res.status, body: body.slice(0, 2000) };
     }
   });
 }
 
-// MCP endpoint — agents connect here
+// MCP endpoint
 app.post('/mcp', async (req, res) => {
   const body = req.body;
   const id = body.id;
   const method = body.method;
 
-  // Extract agent key from Authorization header or body
   const auth = req.headers.authorization || '';
   const key = auth.startsWith('Bearer ') ? auth.slice(7) : (body.params && body.params.key);
 
   if (method === 'initialize') {
     return res.json({
-      jsonrpc: '2.0',
-      id,
+      jsonrpc: '2.0', id,
       result: {
         protocolVersion: '2024-11-05',
         capabilities: { tools: { listChanged: false } },
@@ -145,141 +151,79 @@ app.post('/mcp', async (req, res) => {
 
   if (method === 'tools/list') {
     const tools = [
-      {
-        name: 's3_list',
-        description: 'List objects in an S3 bucket',
-        inputSchema: {
-          type: 'object',
-          properties: { bucket: { type: 'string', description: 'Bucket name' } },
-          required: ['bucket']
-        }
-      },
-      {
-        name: 's3_get',
-        description: 'Get an object from S3',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            bucket: { type: 'string' },
-            key: { type: 'string' }
-          },
-          required: ['bucket', 'key']
-        }
-      },
-      {
-        name: 'http_get',
-        description: 'Perform an HTTP GET',
-        inputSchema: {
-          type: 'object',
-          properties: { url: { type: 'string' } },
-          required: ['url']
-        }
-      }
+      { name: 's3_list', description: 'List objects in an S3 bucket', inputSchema: { type: 'object', properties: { bucket: { type: 'string' } }, required: ['bucket'] } },
+      { name: 's3_get', description: 'Get an object from S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' } }, required: ['bucket', 'key'] } },
+      { name: 's3_put', description: 'Upload an object to S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' }, body: { type: 'string' } }, required: ['bucket', 'key', 'body'] } },
+      { name: 's3_delete', description: 'Delete an object from S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' } }, required: ['bucket', 'key'] } },
+      { name: 'github_get', description: 'GET a GitHub API path (owner/repo or owner/repo/contents/path)', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+      { name: 'http_get', description: 'HTTP GET a URL', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } }
     ];
     return res.json({ jsonrpc: '2.0', id, result: { tools } });
   }
 
   if (method === 'tools/call') {
-    if (!key) {
-      return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Agent key required (Authorization: Bearer <key>)' } });
-    }
+    if (!key) return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Agent key required (Authorization: Bearer <key>)' } });
     const agent = Array.from(agents.values()).find(a => a.key === key);
-    if (!agent || !agent.active) {
-      return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Invalid or killed key' } });
-    }
+    if (!agent || !agent.active) return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Invalid or killed key' } });
 
     const toolName = body.params && body.params.name;
     const args = (body.params && body.params.arguments) || {};
 
-    let action, resource, system;
-    if (toolName === 's3_list') {
-      system = 's3'; action = 'list'; resource = args.bucket;
-    } else if (toolName === 's3_get') {
-      system = 's3'; action = 'get'; resource = `${args.bucket}/${args.key}`;
-    } else if (toolName === 'http_get') {
-      system = 'http'; action = 'read'; resource = args.url;
-    } else {
-      return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Unknown tool' } });
-    }
+    let action, resource, system, extra;
+    if (toolName === 's3_list') { system = 's3'; action = 'list'; resource = args.bucket; }
+    else if (toolName === 's3_get') { system = 's3'; action = 'get'; resource = `${args.bucket}/${args.key}`; }
+    else if (toolName === 's3_put') { system = 's3'; action = 'put'; resource = `${args.bucket}/${args.key}`; extra = { body: args.body }; }
+    else if (toolName === 's3_delete') { system = 's3'; action = 'delete'; resource = `${args.bucket}/${args.key}`; }
+    else if (toolName === 'github_get') { system = 'github'; action = 'read'; resource = args.path; }
+    else if (toolName === 'http_get') { system = 'http'; action = 'read'; resource = args.url; }
+    else return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Unknown tool' } });
 
     if (!isAllowed(agent.permissions, action, resource)) {
-      const entry = { timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'refused' };
-      logs.push(entry); saveData();
-      return res.json({
-        jsonrpc: '2.0', id,
-        result: { content: [{ type: 'text', text: 'Action not permitted' }], isError: true }
-      });
+      logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'refused' });
+      saveData();
+      return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'Action not permitted' }], isError: true } });
     }
 
     const backend = systems.get(system);
-    if (!backend) {
-      return res.json({
-        jsonrpc: '2.0', id,
-        result: { content: [{ type: 'text', text: 'Backend not available' }], isError: true }
-      });
-    }
+    if (!backend) return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'Backend not configured' }], isError: true } });
 
     try {
-      const result = await backend.handler(action, resource);
-      const entry = { timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'allowed', detail: result };
-      logs.push(entry); saveData();
-      return res.json({
-        jsonrpc: '2.0', id,
-        result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false }
-      });
+      const result = await backend.handler(action, resource, extra);
+      logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'allowed', detail: result });
+      saveData();
+      return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false } });
     } catch (err) {
-      const entry = { timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'error', detail: err.message };
-      logs.push(entry); saveData();
-      return res.json({
-        jsonrpc: '2.0', id,
-        result: { content: [{ type: 'text', text: err.message }], isError: true }
-      });
+      logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'error', detail: err.message });
+      saveData();
+      return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: err.message }], isError: true } });
     }
   }
 
   res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } });
 });
 
-// Existing /api/gate for non-MCP callers
 app.post('/api/gate', async (req, res) => {
   const { key, action, resource, system } = req.body;
   if (!key) return res.status(400).json({ error: 'key required' });
-
   const agent = Array.from(agents.values()).find(a => a.key === key);
-  const entry = {
-    timestamp: new Date().toISOString(),
-    agentId: agent?.id || null,
-    system: system || agent?.system || 'http',
-    action,
-    resource,
-    result: 'refused'
-  };
+  const entry = { timestamp: new Date().toISOString(), agentId: agent?.id || null, system: system || agent?.system || 'http', action, resource, result: 'refused' };
 
-  if (!agent || !agent.active) {
-    logs.push(entry); saveData();
-    return res.status(403).json({ error: 'invalid or killed key' });
-  }
-  if (!isAllowed(agent.permissions, action, resource)) {
-    logs.push(entry); saveData();
-    return res.status(403).json({ error: 'action not permitted' });
-  }
+  if (!agent || !agent.active) { logs.push(entry); saveData(); return res.status(403).json({ error: 'invalid or killed key' }); }
+  if (!isAllowed(agent.permissions, action, resource)) { logs.push(entry); saveData(); return res.status(403).json({ error: 'action not permitted' }); }
 
   const backend = systems.get(entry.system);
   if (backend && backend.handler) {
     try {
-      const result = await backend.handler(action, resource, backend.credentials);
-      entry.result = 'allowed';
-      entry.detail = result;
+      const result = await backend.handler(action, resource);
+      entry.result = 'allowed'; entry.detail = result;
       logs.push(entry); saveData();
       return res.json({ status: 'allowed', executed: true, result });
     } catch (err) {
-      entry.result = 'error';
-      entry.detail = err.message;
+      entry.result = 'error'; entry.detail = err.message;
       logs.push(entry); saveData();
       return res.status(502).json({ error: 'action failed', detail: err.message });
     }
   }
-
   entry.result = 'allowed';
   logs.push(entry); saveData();
   res.json({ status: 'allowed', executed: false, message: 'No backend for this system' });
@@ -296,17 +240,11 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', (req, res) => {
-  if (req.body.password === ADMIN_PASSWORD) {
-    req.session.authed = true;
-    return res.redirect('/');
-  }
+  if (req.body.password === ADMIN_PASSWORD) { req.session.authed = true; return res.redirect('/'); }
   res.redirect('/login');
 });
 
-app.get('/logout', (req, res) => {
-  req.session = null;
-  res.redirect('/login');
-});
+app.get('/logout', (req, res) => { req.session = null; res.redirect('/login'); });
 
 app.use(requireAuth);
 
