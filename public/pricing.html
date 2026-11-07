@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pricing — Agent Gate</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --surface: #111111;
+      --border: #555555;
+      --text: #e0e0e0;
+      --muted: #888888;
+      --accent: #ffffff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+    nav { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem 4rem; border-bottom: 1px solid var(--border); }
+    .logo { font-weight: 600; }
+    nav a { color: var(--muted); text-decoration: none; }
+    .content { max-width: 900px; margin: 4rem auto; padding: 0 2rem; }
+    h1 { margin-bottom: 2rem; text-align: center; }
+    .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+    .plan { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; }
+    .plan h2 { font-size: 1.3rem; margin-bottom: 0.5rem; }
+    .price { font-size: 2rem; font-weight: 600; margin: 1rem 0; }
+    .plan ul { list-style: none; margin: 1rem 0; }
+    .plan li { color: var(--muted); margin: 0.5rem 0; }
+    .plan a { display: block; text-align: center; background: var(--accent); color: #000; text-decoration: none; padding: 0.6rem; border-radius: 4px; margin-top: 1rem; font-weight: 500; }
+    footer { text-align: center; padding: 3rem; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 4rem; }
+    footer a { color: var(--muted); text-decoration: none; margin: 0 0.5rem; }
+    @media (max-width: 800px) { .plans { grid-template-columns: 1fr; } nav { padding: 1.25rem 1.5rem; } }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="logo">Agent Gate</div>
+    <a href="/">Home</a>
+  </nav>
+  <div class="content">
+    <h1>Pricing</h1>
+    <div class="plans">
+      <div class="plan">
+        <h2>Starter</h2>
+        <div class="price">$0</div>
+        <ul>
+          <li>1 agent</li>
+          <li>1,000 calls / month</li>
+          <li>HTTP + S3</li>
+        </ul>
+        <a href="/login">Get started</a>
+      </div>
+      <div class="plan">
+        <h2>Team</h2>
+        <div class="price">$49</div>
+        <ul>
+          <li>10 agents</li>
+          <li>50,000 calls / month</li>
+          <li>All systems</li>
+          <li>Audit log</li>
+        </ul>
+        <a href="/login">Get started</a>
+      </div>
+      <div class="plan">
+        <h2>Enterprise</h2>
+        <div class="price">Custom</div>
+        <ul>
+          <li>Unlimited agents</li>
+          <li>Custom limits</li>
+          <li>SSO</li>
+          <li>Dedicated support</li>
+        </ul>
+        <a href="/login">Contact</a>
+      </div>
+    </div>
+  </div>
+  <footer>
+    <a href="/terms">Terms of Service</a>
+    <a href="/privacy">Privacy Policy</a>
+  </footer>
+</body>
+</html>
