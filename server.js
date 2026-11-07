@@ -8,13 +8,14 @@ const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
 
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'agent-gate-secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false }
+  cookie: { secure: process.env.NODE_ENV === 'production', sameSite: 'lax' }
 }));
 app.use(express.static('public'));
 
@@ -37,22 +38,16 @@ loadData();
 
 const systems = new Map();
 
-// Built-in HTTP system — actually performs the request
 systems.set('http', {
   handler: async (action, resource) => {
     if (!resource || !resource.startsWith('http')) throw new Error('resource must be a full URL');
-    const method = action === 'write' || action === 'delete' ? action.toUpperCase() : 'GET';
+    const method = (action === 'write' || action === 'delete') ? action.toUpperCase() : 'GET';
     const res = await fetch(resource, { method });
     const text = await res.text();
-    return {
-      status: res.status,
-      ok: res.ok,
-      body: text.slice(0, 500)
-    };
+    return { status: res.status, ok: res.ok, body: text.slice(0, 500) };
   }
 });
 
-// Optional GitHub
 if (process.env.GITHUB_TOKEN) {
   systems.set('github', {
     credentials: process.env.GITHUB_TOKEN,
@@ -62,9 +57,8 @@ if (process.env.GITHUB_TOKEN) {
       const url = rest.length
         ? `https://api.github.com/repos/${owner}/${repo}/${rest.join('/')}`
         : `https://api.github.com/repos/${owner}/${repo}`;
-      const method = action === 'read' ? 'GET' : 'GET';
       const res = await fetch(url, {
-        method,
+        method: 'GET',
         headers: {
           Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
           Accept: 'application/vnd.github+json',
