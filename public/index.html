@@ -15,93 +15,123 @@
       --danger: #ff6b6b;
       --ok: #4ade80;
     }
+    * { box-sizing: border-box; }
     body {
       font-family: system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-      max-width: 800px;
+      max-width: 720px;
       margin: 2rem auto;
       padding: 0 1rem;
+      line-height: 1.5;
     }
-    h1 { margin-bottom: 0.5rem; }
-    p { color: var(--muted); }
+    h1 { margin: 0; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--muted); margin-bottom: 2rem; }
     section {
-      margin: 2rem 0;
-      padding: 1rem;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
     }
-    input, button, select {
-      margin: 0.25rem;
-      padding: 0.5rem;
+    h2 { margin-top: 0; font-size: 1.1rem; }
+    label { display: block; margin: 0.75rem 0 0.25rem; font-size: 0.9rem; color: var(--muted); }
+    input, select, button {
+      width: 100%;
+      padding: 0.6rem;
       background: var(--bg);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 4px;
+      font-size: 1rem;
     }
-    button { cursor: pointer; }
-    button:hover { border-color: var(--accent); }
-    pre {
-      background: var(--bg);
-      padding: 1rem;
-      overflow-x: auto;
-      border-radius: 4px;
+    button {
+      width: auto;
+      margin-top: 1rem;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
     }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .row { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
     .key {
       background: #1e3a2f;
       color: var(--ok);
-      padding: 0.5rem;
-      word-break: break-all;
+      padding: 0.75rem;
       border-radius: 4px;
+      word-break: break-all;
+      margin-top: 0.5rem;
+      font-family: monospace;
+    }
+    .agent {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
     }
     .killed { color: var(--danger); }
-    .top { display: flex; justify-content: space-between; align-items: center; }
+    pre {
+      background: var(--bg);
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+    }
+    .empty { color: var(--muted); font-style: italic; }
   </style>
 </head>
 <body>
-  <div class="top">
+  <div class="header">
     <h1>Agent Gate</h1>
-    <a href="/logout" style="color: var(--muted);">Logout</a>
+    <a href="/logout" style="color: var(--muted); text-decoration: none;">Logout</a>
   </div>
-  <p>Scoped keys for agents. Real credentials stay on the server. Every action is checked, logged, and revocable. System-agnostic.</p>
+  <p class="subtitle">Agents get narrow keys. Your real credentials stay on the server. Every action is checked and logged. Kill any agent instantly.</p>
 
   <section>
-    <h2>Create Agent</h2>
+    <h2>1. Create an agent</h2>
     <form id="create-form">
-      <input type="text" id="name" placeholder="Agent name" required>
-      <input type="text" id="owner" placeholder="Owner" required>
-      <input type="text" id="system" placeholder="System (optional, e.g. generic or github)" value="generic">
-      <select id="perm" multiple>
+      <label>Name</label>
+      <input type="text" id="name" required>
+      <label>Owner</label>
+      <input type="text" id="owner" required>
+      <label>System</label>
+      <input type="text" id="system" value="generic" placeholder="generic or github">
+      <label>Permissions</label>
+      <select id="perm" multiple size="4">
         <option value="read">read</option>
         <option value="write">write</option>
         <option value="delete">delete</option>
         <option value="execute">execute</option>
       </select>
-      <button type="submit">Create</button>
+      <button type="submit">Create agent</button>
     </form>
     <div id="key-display"></div>
   </section>
 
   <section>
-    <h2>Agents</h2>
-    <button onclick="loadAgents()">Refresh</button>
-    <div id="agents"></div>
+    <h2>2. Agents</h2>
+    <div id="agents"><p class="empty">None yet.</p></div>
   </section>
 
   <section>
-    <h2>Test Gate</h2>
-    <input type="text" id="test-key" placeholder="Agent key">
-    <input type="text" id="test-action" placeholder="action">
-    <input type="text" id="test-resource" placeholder="resource">
-    <input type="text" id="test-system" placeholder="system (optional)">
-    <button onclick="testGate()">Call Gate</button>
+    <h2>3. Test a call</h2>
+    <label>Agent key</label>
+    <input type="text" id="test-key">
+    <label>Action</label>
+    <input type="text" id="test-action" placeholder="read / write / delete">
+    <label>Resource</label>
+    <input type="text" id="test-resource" placeholder="what it wants to touch">
+    <button onclick="testGate()">Send to gate</button>
     <pre id="gate-result"></pre>
   </section>
 
   <section>
-    <h2>Recent Logs</h2>
-    <button onclick="loadLogs()">Refresh</button>
+    <h2>4. Log</h2>
+    <button class="secondary" onclick="loadLogs()">Refresh</button>
     <pre id="logs"></pre>
   </section>
 
@@ -109,10 +139,23 @@
     async function loadAgents() {
       const res = await fetch('/api/agents');
       const data = await res.json();
-      document.getElementById('agents').innerHTML = data.map(a =>
-        `<div>${a.name} (${a.owner}) [${a.system}] — ${a.active ? 'active' : '<span class="killed">killed</span>'} 
-         <button onclick="killAgent('${a.id}')">Kill</button></div>`
-      ).join('') || '<p>No agents yet.</p>';
+      const el = document.getElementById('agents');
+      if (!data.length) {
+        el.innerHTML = '<p class="empty">None yet.</p>';
+        return;
+      }
+      el.innerHTML = data.map(a => `
+        <div class="agent">
+          <div>
+            <strong>${a.name}</strong> · ${a.owner} · ${a.system}<br>
+            <span style="color: var(--muted); font-size: 0.85rem;">${a.permissions.join(', ') || 'no permissions'}</span>
+          </div>
+          <div>
+            ${a.active ? '<span style="color: var(--ok);">active</span>' : '<span class="killed">killed</span>'}
+            ${a.active ? `<button class="secondary" style="margin-left: 0.5rem;" onclick="killAgent('${a.id}')">Kill</button>` : ''}
+          </div>
+        </div>
+      `).join('');
     }
 
     async function killAgent(id) {
@@ -134,8 +177,10 @@
         })
       });
       const data = await res.json();
-      document.getElementById('key-display').innerHTML =
-        `<p>Key (shown once):</p><div class="key">${data.key}</div>`;
+      document.getElementById('key-display').innerHTML = `
+        <p style="margin-top: 1rem;">Key (copy it now):</p>
+        <div class="key">${data.key}</div>
+      `;
       loadAgents();
     };
 
@@ -146,8 +191,7 @@
         body: JSON.stringify({
           key: document.getElementById('test-key').value,
           action: document.getElementById('test-action').value,
-          resource: document.getElementById('test-resource').value,
-          system: document.getElementById('test-system').value || undefined
+          resource: document.getElementById('test-resource').value
         })
       });
       const data = await res.json();
@@ -158,7 +202,9 @@
     async function loadLogs() {
       const res = await fetch('/api/logs');
       const data = await res.json();
-      document.getElementById('logs').textContent = JSON.stringify(data, null, 2);
+      document.getElementById('logs').textContent = data.length
+        ? JSON.stringify(data, null, 2)
+        : 'No calls yet.';
     }
 
     loadAgents();
