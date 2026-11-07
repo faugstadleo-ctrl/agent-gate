@@ -18,7 +18,6 @@ app.use(session({
 }));
 app.use(express.static('public'));
 
-// Persistence
 let agents = new Map();
 let logs = [];
 function loadData() {
@@ -36,21 +35,34 @@ function saveData() {
 }
 loadData();
 
-// Pluggable systems
 const systems = new Map();
 
-// Optional GitHub backend (activates if GITHUB_TOKEN is set)
+// Built-in HTTP system — actually performs the request
+systems.set('http', {
+  handler: async (action, resource) => {
+    if (!resource || !resource.startsWith('http')) throw new Error('resource must be a full URL');
+    const method = action === 'write' || action === 'delete' ? action.toUpperCase() : 'GET';
+    const res = await fetch(resource, { method });
+    const text = await res.text();
+    return {
+      status: res.status,
+      ok: res.ok,
+      body: text.slice(0, 500)
+    };
+  }
+});
+
+// Optional GitHub
 if (process.env.GITHUB_TOKEN) {
   systems.set('github', {
     credentials: process.env.GITHUB_TOKEN,
     handler: async (action, resource) => {
-      // Minimal example: resource is like "owner/repo" or "owner/repo/contents/path"
       const [owner, repo, ...rest] = (resource || '').split('/');
-      if (!owner || !repo) throw new Error('resource must be owner/repo[/...]');
+      if (!owner || !repo) throw new Error('resource must be owner/repo[/path]');
       const url = rest.length
         ? `https://api.github.com/repos/${owner}/${repo}/${rest.join('/')}`
         : `https://api.github.com/repos/${owner}/${repo}`;
-      const method = action === 'read' ? 'GET' : action === 'write' ? 'PUT' : 'GET';
+      const method = action === 'read' ? 'GET' : 'GET';
       const res = await fetch(url, {
         method,
         headers: {
@@ -59,8 +71,9 @@ if (process.env.GITHUB_TOKEN) {
           'User-Agent': 'agent-gate'
         }
       });
-      if (!res.ok) throw new Error(`GitHub ${res.status}`);
-      return { status: res.status, ok: true };
+      const body = await res.text();
+      if (!res.ok) throw new Error(`GitHub ${res.status}: ${body.slice(0, 200)}`);
+      return { status: res.status, body: body.slice(0, 500) };
     }
   });
 }
@@ -96,7 +109,7 @@ app.post('/api/agents', (req, res) => {
   if (!name || !owner) return res.status(400).json({ error: 'name and owner required' });
   const id = uuidv4();
   const key = uuidv4();
-  const agent = { id, name, owner, system: system || 'generic', permissions: permissions || [], key, active: true, createdAt: new Date().toISOString() };
+  const agent = { id, name, owner, system: system || 'http', permissions: permissions || [], key, active: true, createdAt: new Date().toISOString() };
   agents.set(id, agent);
   saveData();
   res.json({ id, key, message: 'Agent created. Store the key securely; it will not be shown again.' });
@@ -118,7 +131,7 @@ app.post('/api/agents/:id/kill', (req, res) => {
 app.post('/api/gate', async (req, res) => {
   const { key, action, resource, system } = req.body;
   const agent = Array.from(agents.values()).find(a => a.key === key);
-  const entry = { timestamp: new Date().toISOString(), agentId: agent?.id || null, system: system || agent?.system || 'generic', action, resource, result: 'refused' };
+  const entry = { timestamp: new Date().toISOString(), agentId: agent?.id || null, system: system || agent?.system || 'http', action, resource, result: 'refused' };
 
   if (!agent || !agent.active) {
     logs.push(entry); saveData();
@@ -133,19 +146,21 @@ app.post('/api/gate', async (req, res) => {
   if (backend && backend.handler) {
     try {
       const result = await backend.handler(action, resource, backend.credentials);
-      entry.result = 'allowed'; entry.detail = result;
+      entry.result = 'allowed';
+      entry.detail = result;
       logs.push(entry); saveData();
-      return res.json({ status: 'allowed', result });
+      return res.json({ status: 'allowed', executed: true, result });
     } catch (err) {
-      entry.result = 'error'; entry.detail = err.message;
+      entry.result = 'error';
+      entry.detail = err.message;
       logs.push(entry); saveData();
-      return res.status(502).json({ error: 'backend failed', detail: err.message });
+      return res.status(502).json({ error: 'action failed', detail: err.message });
     }
   }
 
   entry.result = 'allowed';
   logs.push(entry); saveData();
-  res.json({ status: 'allowed', message: 'Action permitted by gate (no backend registered for this system)' });
+  res.json({ status: 'allowed', executed: false, message: 'No backend for this system' });
 });
 
 app.get('/api/logs', (req, res) => res.json(logs.slice(-100)));
