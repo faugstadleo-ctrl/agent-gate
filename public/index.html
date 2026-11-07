@@ -14,6 +14,7 @@
       --accent: #6c8cff;
       --danger: #ff6b6b;
       --ok: #4ade80;
+      --warn: #fbbf24;
     }
     * { box-sizing: border-box; }
     body {
@@ -66,6 +67,7 @@
       font-family: monospace;
     }
     .error { color: var(--danger); margin-top: 0.5rem; }
+    .success { color: var(--ok); margin-top: 0.5rem; }
     .agent {
       display: flex;
       justify-content: space-between;
@@ -74,15 +76,35 @@
       border-bottom: 1px solid var(--border);
     }
     .killed { color: var(--danger); }
-    pre {
-      background: var(--bg);
-      padding: 1rem;
-      border-radius: 4px;
-      overflow-x: auto;
-      font-size: 0.85rem;
-    }
     .empty { color: var(--muted); font-style: italic; }
     .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+    .result {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .result.allowed { background: #1e3a2f; color: var(--ok); }
+    .result.refused, .result.error { background: #3a1e1e; color: var(--danger); }
+    .log-entry {
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .log-entry:last-child { border-bottom: none; }
+    .log-time { color: var(--muted); font-size: 0.75rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .badge.allowed { background: #1e3a2f; color: var(--ok); }
+    .badge.refused, .badge.error { background: #3a1e1e; color: var(--danger); }
   </style>
 </head>
 <body>
@@ -103,7 +125,7 @@
       <input type="text" id="system" value="http" placeholder="http, s3, github">
       <label>Permissions</label>
       <input type="text" id="perm" value="read" placeholder="read, s3:list, http:get, read:*">
-      <p class="hint">Comma-separated. Examples: read, write, s3:list, get:mybucket/*, * </p>
+      <p class="hint">Comma-separated. Examples: read, write, s3:list, get:mybucket/*, *</p>
       <button type="submit">Create agent</button>
     </form>
     <div id="key-display"></div>
@@ -123,13 +145,13 @@
     <label>Resource</label>
     <input type="text" id="test-resource" placeholder="https://example.com or bucket/key">
     <button onclick="testGate()">Send to gate</button>
-    <pre id="gate-result"></pre>
+    <div id="gate-result"></div>
   </section>
 
   <section>
     <h2>4. Log</h2>
     <button class="secondary" onclick="loadLogs()">Refresh</button>
-    <pre id="logs"></pre>
+    <div id="logs"><p class="empty">No calls yet.</p></div>
   </section>
 
   <script>
@@ -183,7 +205,8 @@
         return;
       }
       display.innerHTML = `
-        <p style="margin-top: 1rem;">Key (copy it now):</p>
+        <p class="success" style="margin-top: 1rem;">Agent created</p>
+        <p>Key (copy it now):</p>
         <div class="key">${data.key || 'missing'}</div>
       `;
       loadAgents();
@@ -200,16 +223,31 @@
         })
       });
       const data = await res.json();
-      document.getElementById('gate-result').textContent = JSON.stringify(data, null, 2);
+      const el = document.getElementById('gate-result');
+      const ok = res.ok && data.status === 'allowed';
+      el.className = 'result ' + (ok ? 'allowed' : 'refused');
+      el.textContent = JSON.stringify(data, null, 2);
       loadLogs();
     }
 
     async function loadLogs() {
       const res = await fetch('/api/logs');
       const data = await res.json();
-      document.getElementById('logs').textContent = data.length
-        ? JSON.stringify(data, null, 2)
-        : 'No calls yet.';
+      const el = document.getElementById('logs');
+      if (!data.length) {
+        el.innerHTML = '<p class="empty">No calls yet.</p>';
+        return;
+      }
+      el.innerHTML = data.slice().reverse().map(entry => {
+        const badgeClass = entry.result === 'allowed' ? 'allowed' : 'refused';
+        return `
+          <div class="log-entry">
+            <span class="badge ${badgeClass}">${entry.result}</span>
+            <strong>${entry.action || '-'}</strong> ${entry.resource || ''}<br>
+            <span class="log-time">${entry.timestamp || ''} · ${entry.system || ''} · agent ${entry.agentId ? entry.agentId.slice(0, 8) : 'unknown'}</span>
+          </div>
+        `;
+      }).join('');
     }
 
     loadAgents();
