@@ -8,6 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
+const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
 app.set('trust proxy', 1);
 app.use(express.json());
@@ -23,6 +24,8 @@ app.use(express.static('public'));
 
 let agents = new Map();
 let logs = [];
+const inflight = new Map(); // agentId -> Set of AbortControllers
+
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
@@ -38,6 +41,26 @@ function saveData() {
 }
 loadData();
 
+async function notify(event, payload) {
+  if (!WEBHOOK_URL) return;
+  try {
+    await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, ...payload, timestamp: new Date().toISOString() })
+    });
+  } catch (e) { console.error('Webhook failed', e.message); }
+}
+
+function checkRateLimit(agent) {
+  const limit = agent.hourlyLimit || 1000;
+  const now = Date.now();
+  agent.callTimestamps = (agent.callTimestamps || []).filter(t => now - t < 3600000);
+  if (agent.callTimestamps.length >= limit) return false;
+  agent.callTimestamps.push(now);
+  return true;
+}
+
 function isAllowed(permissions, action, resource) {
   if (!permissions || permissions.length === 0) return true;
   const check = resource ? `${action}:${resource}` : action;
@@ -51,46 +74,50 @@ function isAllowed(permissions, action, resource) {
   });
 }
 
+function getCredentials(agent, system) {
+  const override = agent.credentials && agent.credentials[system];
+  if (override) return override;
+  if (system === 's3') return {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1').trim()
+  };
+  if (system === 'github') return process.env.GITHUB_TOKEN;
+  if (system === 'slack') return process.env.SLACK_BOT_TOKEN;
+  return null;
+}
+
 const systems = new Map();
 
 systems.set('http', {
-  handler: async (action, resource) => {
+  handler: async (action, resource, extra, signal) => {
     if (!resource || !resource.startsWith('http')) throw new Error('resource must be a full URL');
     const method = (action === 'write' || action === 'delete' || action === 'POST' || action === 'PUT') ? (action.length <= 6 ? action.toUpperCase() : 'GET') : 'GET';
-    const res = await fetch(resource, { method: method === 'DELETE' ? 'DELETE' : method === 'POST' || method === 'PUT' || method === 'WRITE' ? 'POST' : 'GET' });
+    const res = await fetch(resource, { method: method === 'DELETE' ? 'DELETE' : method === 'POST' || method === 'PUT' || method === 'WRITE' ? 'POST' : 'GET', signal });
     const text = await res.text();
     return { status: res.status, ok: res.ok, body: text.slice(0, 500) };
   }
 });
 
 if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-  const region = (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1').trim();
-  const s3 = new S3Client({
-    region,
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-  });
   systems.set('s3', {
-    handler: async (action, resource, extra) => {
+    handler: async (action, resource, extra, signal, creds) => {
+      const c = creds || getCredentials({}, 's3');
+      const s3 = new S3Client({ region: c.region, credentials: { accessKeyId: c.accessKeyId, secretAccessKey: c.secretAccessKey } });
       const [bucket, ...keyParts] = (resource || '').split('/');
       const key = keyParts.join('/');
       if (!bucket) throw new Error('resource must be bucket or bucket/key');
       if (action === 'list' || (action === 'read' && !key)) {
-        const cmd = new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 50 });
-        const out = await s3.send(cmd);
+        const out = await s3.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 50 }));
         return { objects: (out.Contents || []).map(o => ({ key: o.Key, size: o.Size })) };
       }
       if (action === 'get' || (action === 'read' && key)) {
-        const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-        const out = await s3.send(cmd);
+        const out = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
         const body = await out.Body.transformToString();
         return { key, body: body.slice(0, 2000) };
       }
       if (action === 'put' || action === 'write') {
-        const body = extra?.body || '';
-        await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body }));
+        await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: extra?.body || '' }));
         return { uploaded: key };
       }
       if (action === 'delete') {
@@ -104,35 +131,27 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
 
 if (process.env.GITHUB_TOKEN) {
   systems.set('github', {
-    handler: async (action, resource, extra) => {
+    handler: async (action, resource, extra, signal, creds) => {
+      const token = creds || process.env.GITHUB_TOKEN;
       const [owner, repo, ...rest] = (resource || '').split('/');
       if (!owner || !repo) throw new Error('resource must be owner/repo[/...]');
       const base = `https://api.github.com/repos/${owner}/${repo}`;
-      const headers = {
-        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'agent-gate'
-      };
+      const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'agent-gate' };
       if (action === 'create_issue') {
-        const res = await fetch(`${base}/issues`, {
-          method: 'POST',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: extra.title, body: extra.body || '' })
-        });
+        const res = await fetch(`${base}/issues`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ title: extra.title, body: extra.body || '' }), signal });
         const data = await res.json();
         if (!res.ok) throw new Error(JSON.stringify(data).slice(0, 300));
         return { number: data.number, url: data.html_url };
       }
       if (action === 'list_prs') {
-        const res = await fetch(`${base}/pulls?state=open`, { headers });
+        const res = await fetch(`${base}/pulls?state=open`, { headers, signal });
         const data = await res.json();
         if (!res.ok) throw new Error(JSON.stringify(data).slice(0, 300));
         return { prs: data.slice(0, 20).map(p => ({ number: p.number, title: p.title })) };
       }
-      // default GET
       let url = base;
       if (rest.length) url += '/' + rest.join('/');
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { headers, signal });
       const body = await res.text();
       if (!res.ok) throw new Error(`GitHub ${res.status}: ${body.slice(0, 300)}`);
       return { status: res.status, body: body.slice(0, 2000) };
@@ -142,22 +161,21 @@ if (process.env.GITHUB_TOKEN) {
 
 if (process.env.SLACK_BOT_TOKEN) {
   systems.set('slack', {
-    handler: async (action, resource, extra) => {
-      const token = process.env.SLACK_BOT_TOKEN;
+    handler: async (action, resource, extra, signal, creds) => {
+      const token = creds || process.env.SLACK_BOT_TOKEN;
       if (action === 'post') {
         const res = await fetch('https://slack.com/api/chat.postMessage', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ channel: resource, text: extra.text })
+          body: JSON.stringify({ channel: resource, text: extra.text }),
+          signal
         });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error);
         return { ts: data.ts, channel: data.channel };
       }
       if (action === 'list_channels') {
-        const res = await fetch('https://slack.com/api/conversations.list', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await fetch('https://slack.com/api/conversations.list', { headers: { Authorization: `Bearer ${token}` }, signal });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error);
         return { channels: (data.channels || []).slice(0, 30).map(c => ({ id: c.id, name: c.name })) };
@@ -167,24 +185,35 @@ if (process.env.SLACK_BOT_TOKEN) {
   });
 }
 
-// MCP endpoint
+async function executeGated(agent, system, action, resource, extra) {
+  if (!checkRateLimit(agent)) {
+    await notify('rate_limited', { agentId: agent.id, action, resource });
+    throw new Error('hourly limit exceeded');
+  }
+  const controller = new AbortController();
+  if (!inflight.has(agent.id)) inflight.set(agent.id, new Set());
+  inflight.get(agent.id).add(controller);
+
+  try {
+    const creds = getCredentials(agent, system);
+    const backend = systems.get(system);
+    if (!backend) throw new Error('backend not configured');
+    const result = await backend.handler(action, resource, extra, controller.signal, creds);
+    return result;
+  } finally {
+    inflight.get(agent.id)?.delete(controller);
+  }
+}
+
 app.post('/mcp', async (req, res) => {
   const body = req.body;
   const id = body.id;
   const method = body.method;
-
   const auth = req.headers.authorization || '';
   const key = auth.startsWith('Bearer ') ? auth.slice(7) : (body.params && body.params.key);
 
   if (method === 'initialize') {
-    return res.json({
-      jsonrpc: '2.0', id,
-      result: {
-        protocolVersion: '2024-11-05',
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'agent-gate', version: '1.0.0' }
-      }
-    });
+    return res.json({ jsonrpc: '2.0', id, result: { protocolVersion: '2024-11-05', capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'agent-gate', version: '1.0.0' } } });
   }
 
   if (method === 'tools/list') {
@@ -193,10 +222,10 @@ app.post('/mcp', async (req, res) => {
       { name: 's3_get', description: 'Get an object from S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' } }, required: ['bucket', 'key'] } },
       { name: 's3_put', description: 'Upload an object to S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' }, body: { type: 'string' } }, required: ['bucket', 'key', 'body'] } },
       { name: 's3_delete', description: 'Delete an object from S3', inputSchema: { type: 'object', properties: { bucket: { type: 'string' }, key: { type: 'string' } }, required: ['bucket', 'key'] } },
-      { name: 'github_get', description: 'GET a GitHub path (owner/repo or owner/repo/...)', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
-      { name: 'github_create_issue', description: 'Create a GitHub issue', inputSchema: { type: 'object', properties: { repo: { type: 'string', description: 'owner/repo' }, title: { type: 'string' }, body: { type: 'string' } }, required: ['repo', 'title'] } },
+      { name: 'github_get', description: 'GET a GitHub path', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+      { name: 'github_create_issue', description: 'Create a GitHub issue', inputSchema: { type: 'object', properties: { repo: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' } }, required: ['repo', 'title'] } },
       { name: 'github_list_prs', description: 'List open PRs', inputSchema: { type: 'object', properties: { repo: { type: 'string' } }, required: ['repo'] } },
-      { name: 'slack_post', description: 'Post a message to a Slack channel', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, text: { type: 'string' } }, required: ['channel', 'text'] } },
+      { name: 'slack_post', description: 'Post a message to Slack', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, text: { type: 'string' } }, required: ['channel', 'text'] } },
       { name: 'slack_list_channels', description: 'List Slack channels', inputSchema: { type: 'object', properties: {} } },
       { name: 'http_get', description: 'HTTP GET a URL', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } }
     ];
@@ -204,13 +233,12 @@ app.post('/mcp', async (req, res) => {
   }
 
   if (method === 'tools/call') {
-    if (!key) return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Agent key required (Authorization: Bearer <key>)' } });
+    if (!key) return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Agent key required' } });
     const agent = Array.from(agents.values()).find(a => a.key === key);
     if (!agent || !agent.active) return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Invalid or killed key' } });
 
     const toolName = body.params && body.params.name;
     const args = (body.params && body.params.arguments) || {};
-
     let action, resource, system, extra = {};
     if (toolName === 's3_list') { system = 's3'; action = 'list'; resource = args.bucket; }
     else if (toolName === 's3_get') { system = 's3'; action = 'get'; resource = `${args.bucket}/${args.key}`; }
@@ -227,14 +255,12 @@ app.post('/mcp', async (req, res) => {
     if (!isAllowed(agent.permissions, action, resource)) {
       logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'refused' });
       saveData();
+      await notify('refused', { agentId: agent.id, action, resource });
       return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'Action not permitted' }], isError: true } });
     }
 
-    const backend = systems.get(system);
-    if (!backend) return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'Backend not configured (set the token/env var)' }], isError: true } });
-
     try {
-      const result = await backend.handler(action, resource, extra);
+      const result = await executeGated(agent, system, action, resource, extra);
       logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'allowed', detail: result });
       saveData();
       return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false } });
@@ -254,23 +280,17 @@ app.post('/api/gate', async (req, res) => {
   const agent = Array.from(agents.values()).find(a => a.key === key);
   const entry = { timestamp: new Date().toISOString(), agentId: agent?.id || null, system: system || agent?.system || 'http', action, resource, result: 'refused' };
   if (!agent || !agent.active) { logs.push(entry); saveData(); return res.status(403).json({ error: 'invalid or killed key' }); }
-  if (!isAllowed(agent.permissions, action, resource)) { logs.push(entry); saveData(); return res.status(403).json({ error: 'action not permitted' }); }
-  const backend = systems.get(entry.system);
-  if (backend && backend.handler) {
-    try {
-      const result = await backend.handler(action, resource);
-      entry.result = 'allowed'; entry.detail = result;
-      logs.push(entry); saveData();
-      return res.json({ status: 'allowed', executed: true, result });
-    } catch (err) {
-      entry.result = 'error'; entry.detail = err.message;
-      logs.push(entry); saveData();
-      return res.status(502).json({ error: 'action failed', detail: err.message });
-    }
+  if (!isAllowed(agent.permissions, action, resource)) { logs.push(entry); saveData(); await notify('refused', { agentId: agent.id, action, resource }); return res.status(403).json({ error: 'action not permitted' }); }
+  try {
+    const result = await executeGated(agent, entry.system, action, resource, {});
+    entry.result = 'allowed'; entry.detail = result;
+    logs.push(entry); saveData();
+    return res.json({ status: 'allowed', executed: true, result });
+  } catch (err) {
+    entry.result = 'error'; entry.detail = err.message;
+    logs.push(entry); saveData();
+    return res.status(502).json({ error: 'action failed', detail: err.message });
   }
-  entry.result = 'allowed';
-  logs.push(entry); saveData();
-  res.json({ status: 'allowed', executed: false, message: 'No backend for this system' });
 });
 
 function requireAuth(req, res, next) {
@@ -295,28 +315,41 @@ app.use(requireAuth);
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.post('/api/agents', (req, res) => {
-  const { name, owner, permissions, system } = req.body;
+  const { name, owner, permissions, system, hourlyLimit, credentials } = req.body;
   if (!name || !owner) return res.status(400).json({ error: 'name and owner required' });
   const id = uuidv4();
   const key = uuidv4();
   const perms = Array.isArray(permissions) ? permissions : (permissions || '').split(',').map(s => s.trim()).filter(Boolean);
-  const agent = { id, name, owner, system: system || 'http', permissions: perms, key, active: true, createdAt: new Date().toISOString() };
+  const agent = {
+    id, name, owner, system: system || 'http', permissions: perms, key, active: true,
+    createdAt: new Date().toISOString(),
+    hourlyLimit: hourlyLimit || 1000,
+    credentials: credentials || null,
+    callTimestamps: []
+  };
   agents.set(id, agent);
   saveData();
   res.json({ id, key, message: 'Agent created. Store the key securely; it will not be shown again.' });
 });
 
 app.get('/api/agents', (req, res) => {
-  const list = Array.from(agents.values()).map(({ key, ...rest }) => rest);
+  const list = Array.from(agents.values()).map(({ key, credentials, callTimestamps, ...rest }) => rest);
   res.json(list);
 });
 
-app.post('/api/agents/:id/kill', (req, res) => {
+app.post('/api/agents/:id/kill', async (req, res) => {
   const agent = agents.get(req.params.id);
   if (!agent) return res.status(404).json({ error: 'not found' });
   agent.active = false;
+  // Abort in-flight requests
+  const controllers = inflight.get(agent.id);
+  if (controllers) {
+    for (const c of controllers) c.abort();
+    inflight.delete(agent.id);
+  }
   saveData();
-  res.json({ message: 'Agent killed' });
+  await notify('killed', { agentId: agent.id, name: agent.name });
+  res.json({ message: 'Agent killed and in-flight requests aborted' });
 });
 
 app.get('/api/logs', (req, res) => res.json(logs.slice(-100)));
