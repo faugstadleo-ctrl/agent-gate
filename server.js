@@ -1,6 +1,7 @@
 const express = require('express');
 const cookieSession = require('cookie-session');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
@@ -24,7 +25,8 @@ app.use(express.static('public'));
 
 let agents = new Map();
 let logs = [];
-const inflight = new Map(); // agentId -> Set of AbortControllers
+const inflight = new Map();
+const seenNonces = new Set();
 
 function loadData() {
   try {
@@ -74,9 +76,15 @@ function isAllowed(permissions, action, resource) {
   });
 }
 
-function getCredentials(agent, system) {
+function getCredentials(agent, system, action) {
   const override = agent.credentials && agent.credentials[system];
-  if (override) return override;
+  if (override) {
+    if (typeof override === 'object' && (override.read || override.write)) {
+      const isWrite = ['put', 'write', 'delete', 'create_issue', 'post'].includes(action);
+      return isWrite ? (override.write || override.read) : (override.read || override);
+    }
+    return override;
+  }
   if (system === 's3') return {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -85,6 +93,28 @@ function getCredentials(agent, system) {
   if (system === 'github') return process.env.GITHUB_TOKEN;
   if (system === 'slack') return process.env.SLACK_BOT_TOKEN;
   return null;
+}
+
+function checkIpAllowlist(agent, ip) {
+  if (!agent.ipAllowlist || agent.ipAllowlist.length === 0) return true;
+  return agent.ipAllowlist.includes(ip);
+}
+
+function checkKeyExpiry(agent) {
+  if (!agent.keyExpiresAt) return true;
+  return new Date(agent.keyExpiresAt) > new Date();
+}
+
+function checkReplay(timestamp, nonce) {
+  if (!timestamp) return true;
+  const ts = parseInt(timestamp, 10);
+  if (isNaN(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) return false;
+  if (nonce) {
+    if (seenNonces.has(nonce)) return false;
+    seenNonces.add(nonce);
+    setTimeout(() => seenNonces.delete(nonce), 10 * 60 * 1000);
+  }
+  return true;
 }
 
 const systems = new Map();
@@ -185,7 +215,22 @@ if (process.env.SLACK_BOT_TOKEN) {
   });
 }
 
-async function executeGated(agent, system, action, resource, extra) {
+async function executeGated(agent, system, action, resource, extra, req) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || '';
+  if (!checkIpAllowlist(agent, ip)) {
+    await notify('ip_blocked', { agentId: agent.id, ip });
+    throw new Error('IP not allowed');
+  }
+  if (!checkKeyExpiry(agent)) {
+    await notify('key_expired', { agentId: agent.id });
+    throw new Error('Key expired');
+  }
+  const ts = req.headers['x-timestamp'];
+  const nonce = req.headers['x-nonce'];
+  if (!checkReplay(ts, nonce)) {
+    await notify('replay_blocked', { agentId: agent.id });
+    throw new Error('Invalid or replayed timestamp');
+  }
   if (!checkRateLimit(agent)) {
     await notify('rate_limited', { agentId: agent.id, action, resource });
     throw new Error('hourly limit exceeded');
@@ -195,7 +240,7 @@ async function executeGated(agent, system, action, resource, extra) {
   inflight.get(agent.id).add(controller);
 
   try {
-    const creds = getCredentials(agent, system);
+    const creds = getCredentials(agent, system, action);
     const backend = systems.get(system);
     if (!backend) throw new Error('backend not configured');
     const result = await backend.handler(action, resource, extra, controller.signal, creds);
@@ -260,7 +305,7 @@ app.post('/mcp', async (req, res) => {
     }
 
     try {
-      const result = await executeGated(agent, system, action, resource, extra);
+      const result = await executeGated(agent, system, action, resource, extra, req);
       logs.push({ timestamp: new Date().toISOString(), agentId: agent.id, system, action, resource, result: 'allowed', detail: result });
       saveData();
       return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false } });
@@ -282,7 +327,7 @@ app.post('/api/gate', async (req, res) => {
   if (!agent || !agent.active) { logs.push(entry); saveData(); return res.status(403).json({ error: 'invalid or killed key' }); }
   if (!isAllowed(agent.permissions, action, resource)) { logs.push(entry); saveData(); await notify('refused', { agentId: agent.id, action, resource }); return res.status(403).json({ error: 'action not permitted' }); }
   try {
-    const result = await executeGated(agent, entry.system, action, resource, {});
+    const result = await executeGated(agent, entry.system, action, resource, {}, req);
     entry.result = 'allowed'; entry.detail = result;
     logs.push(entry); saveData();
     return res.json({ status: 'allowed', executed: true, result });
@@ -315,7 +360,7 @@ app.use(requireAuth);
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.post('/api/agents', (req, res) => {
-  const { name, owner, permissions, system, hourlyLimit, credentials } = req.body;
+  const { name, owner, permissions, system, hourlyLimit, credentials, ipAllowlist, keyExpiresInDays } = req.body;
   if (!name || !owner) return res.status(400).json({ error: 'name and owner required' });
   const id = uuidv4();
   const key = uuidv4();
@@ -325,6 +370,8 @@ app.post('/api/agents', (req, res) => {
     createdAt: new Date().toISOString(),
     hourlyLimit: hourlyLimit || 1000,
     credentials: credentials || null,
+    ipAllowlist: Array.isArray(ipAllowlist) ? ipAllowlist : null,
+    keyExpiresAt: keyExpiresInDays ? new Date(Date.now() + keyExpiresInDays * 86400000).toISOString() : null,
     callTimestamps: []
   };
   agents.set(id, agent);
@@ -341,7 +388,6 @@ app.post('/api/agents/:id/kill', async (req, res) => {
   const agent = agents.get(req.params.id);
   if (!agent) return res.status(404).json({ error: 'not found' });
   agent.active = false;
-  // Abort in-flight requests
   const controllers = inflight.get(agent.id);
   if (controllers) {
     for (const c of controllers) c.abort();
@@ -350,6 +396,17 @@ app.post('/api/agents/:id/kill', async (req, res) => {
   saveData();
   await notify('killed', { agentId: agent.id, name: agent.name });
   res.json({ message: 'Agent killed and in-flight requests aborted' });
+});
+
+app.post('/api/agents/:id/rotate', (req, res) => {
+  const agent = agents.get(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'not found' });
+  agent.key = uuidv4();
+  if (req.body.keyExpiresInDays) {
+    agent.keyExpiresAt = new Date(Date.now() + req.body.keyExpiresInDays * 86400000).toISOString();
+  }
+  saveData();
+  res.json({ key: agent.key, message: 'Key rotated. Store the new key.' });
 });
 
 app.get('/api/logs', (req, res) => res.json(logs.slice(-100)));
