@@ -56,10 +56,14 @@
       border-radius: 4px;
     }
     .killed { color: var(--danger); }
+    .top { display: flex; justify-content: space-between; align-items: center; }
   </style>
 </head>
 <body>
-  <h1>Agent Gate</h1>
+  <div class="top">
+    <h1>Agent Gate</h1>
+    <a href="/logout" style="color: var(--muted);">Logout</a>
+  </div>
   <p>Scoped keys for agents. Real credentials stay on the server. Every action is checked, logged, and revocable. System-agnostic.</p>
 
   <section>
@@ -67,7 +71,7 @@
     <form id="create-form">
       <input type="text" id="name" placeholder="Agent name" required>
       <input type="text" id="owner" placeholder="Owner" required>
-      <input type="text" id="system" placeholder="System (optional, e.g. generic)" value="generic">
+      <input type="text" id="system" placeholder="System (optional, e.g. generic or github)" value="generic">
       <select id="perm" multiple>
         <option value="read">read</option>
         <option value="write">write</option>
