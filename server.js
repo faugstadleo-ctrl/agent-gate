@@ -411,6 +411,21 @@ app.post('/api/contact', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/signup', (req, res) => {
+  const { username, password, plan } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  if (Array.from(users.values()).find(u => u.username === username)) {
+    return res.status(400).json({ error: 'username taken' });
+  }
+  const id = uuidv4();
+  users.set(id, { id, username, password, role: 'user', plan: plan || 'starter' });
+  saveData();
+  req.session.authed = true;
+  req.session.user = username;
+  logAudit(username, 'signup', { plan });
+  res.json({ ok: true });
+});
+
 function requireAuth(req, res, next) {
   if (req.session && req.session.authed) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'login required' });
@@ -425,6 +440,9 @@ app.get('/', (req, res) => {
 app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
 app.get('/pricing', (req, res) => res.sendFile(path.join(__dirname, 'public', 'pricing.html')));
+app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'public', 'signup.html')));
+app.get('/contact', (req, res) => res.sendFile(path.join(__dirname, 'public', 'contact.html')));
+app.get('/payment', (req, res) => res.sendFile(path.join(__dirname, 'public', 'payment.html')));
 
 app.get('/login', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body{background:#000;color:#e0e0e0;font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}form{background:#111;padding:2.5rem;border-radius:8px;border:1px solid #555;min-width:280px}h2{margin:0 0 1.5rem;font-weight:600}input,button{display:block;margin:0.6rem 0;padding:0.7rem;width:100%;background:#000;color:#e0e0e0;border:1px solid #555;border-radius:4px;font-size:1rem}button{background:#fff;color:#000;border:none;font-weight:500;cursor:pointer}button:hover{opacity:0.9}</style></head><body><form method="POST" action="/login"><h2>Agent Gate</h2><input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required><button>Login</button></form></body></html>`);
