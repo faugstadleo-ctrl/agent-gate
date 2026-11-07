@@ -21,7 +21,6 @@ app.use(cookieSession({
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax'
 }));
-app.use(express.static('public'));
 
 let agents = new Map();
 let logs = [];
@@ -399,8 +398,13 @@ function requireAuth(req, res, next) {
   res.redirect('/login');
 }
 
+app.get('/', (req, res) => {
+  if (req.session && req.session.authed) return res.redirect('/app');
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
 app.get('/login', (req, res) => {
-  res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body{background:#000;color:#e0e0e0;font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}form{background:#111;padding:2rem;border-radius:8px;border:1px solid #555}input,button{display:block;margin:0.5rem 0;padding:0.5rem;width:200px;background:#000;color:#e0e0e0;border:1px solid #555}</style></head><body><form method="POST" action="/login"><h2>Agent Gate</h2><input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required><button>Login</button></form></body></html>`);
+  res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body{background:#050505;color:#f5f5f5;font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}form{background:#0c0c0c;padding:2.5rem;border-radius:12px;border:1px solid #1f1f1f;min-width:280px}h2{margin:0 0 1.5rem;font-weight:600;letter-spacing:-0.02em}input,button{display:block;margin:0.6rem 0;padding:0.7rem;width:100%;background:#050505;color:#f5f5f5;border:1px solid #1f1f1f;border-radius:6px;font-size:1rem}button{background:#fff;color:#000;border:none;font-weight:500;cursor:pointer}button:hover{opacity:0.9}</style></head><body><form method="POST" action="/login"><h2>Agent Gate</h2><input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required><button>Login</button></form></body></html>`);
 });
 
 app.post('/login', (req, res) => {
@@ -410,14 +414,19 @@ app.post('/login', (req, res) => {
     req.session.authed = true;
     req.session.user = user.username;
     logAudit(user.username, 'login', {});
-    return res.redirect('/');
+    return res.redirect('/app');
   }
   res.redirect('/login');
 });
 
-app.get('/logout', (req, res) => { req.session = null; res.redirect('/login'); });
+app.get('/logout', (req, res) => { req.session = null; res.redirect('/'); });
+
+app.get('/app', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'app.html'));
+});
 
 app.use(requireAuth);
+app.use(express.static('public'));
 
 app.get('/health', async (req, res) => {
   const checks = { ok: true };
@@ -580,10 +589,6 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/audit', (req, res) => {
   if (req.session.user !== 'admin') return res.status(403).json({ error: 'admin only' });
   res.json(audit.slice(-100));
-});
-
-app.get('/custom-domain', (req, res) => {
-  res.send('To use your own domain: add a CNAME in your DNS pointing to your Render app, then add the domain in the Render dashboard under Settings → Custom Domains.');
 });
 
 app.listen(PORT, () => console.log(`Agent Gate listening on port ${PORT}`));
