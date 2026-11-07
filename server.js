@@ -3,6 +3,7 @@ const session = require('express-session');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
+const { S3Client, ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
@@ -47,6 +48,40 @@ systems.set('http', {
     return { status: res.status, ok: res.ok, body: text.slice(0, 500) };
   }
 });
+
+if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+  const s3 = new S3Client({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+  });
+
+  systems.set('s3', {
+    handler: async (action, resource) => {
+      // resource format: bucket or bucket/key
+      const [bucket, ...keyParts] = (resource || '').split('/');
+      const key = keyParts.join('/');
+      if (!bucket) throw new Error('resource must be bucket or bucket/key');
+
+      if (action === 'read' && !key) {
+        const cmd = new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 20 });
+        const out = await s3.send(cmd);
+        return { objects: (out.Contents || []).map(o => o.Key) };
+      }
+
+      if (action === 'read' && key) {
+        const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+        const out = await s3.send(cmd);
+        const body = await out.Body.transformToString();
+        return { key, body: body.slice(0, 500) };
+      }
+
+      throw new Error('s3 only supports read for now (list bucket or get object)');
+    }
+  });
+}
 
 if (process.env.GITHUB_TOKEN) {
   systems.set('github', {
