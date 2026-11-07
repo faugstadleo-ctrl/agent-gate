@@ -121,6 +121,51 @@ if (process.env.GITHUB_TOKEN) {
   });
 }
 
+// Agent-facing gate — no login required, only the agent key
+app.post('/api/gate', async (req, res) => {
+  const { key, action, resource, system } = req.body;
+  if (!key) return res.status(400).json({ error: 'key required' });
+
+  const agent = Array.from(agents.values()).find(a => a.key === key);
+  const entry = {
+    timestamp: new Date().toISOString(),
+    agentId: agent?.id || null,
+    system: system || agent?.system || 'http',
+    action,
+    resource,
+    result: 'refused'
+  };
+
+  if (!agent || !agent.active) {
+    logs.push(entry); saveData();
+    return res.status(403).json({ error: 'invalid or killed key' });
+  }
+  if (!isAllowed(agent.permissions, action, resource)) {
+    logs.push(entry); saveData();
+    return res.status(403).json({ error: 'action not permitted' });
+  }
+
+  const backend = systems.get(entry.system);
+  if (backend && backend.handler) {
+    try {
+      const result = await backend.handler(action, resource, backend.credentials);
+      entry.result = 'allowed';
+      entry.detail = result;
+      logs.push(entry); saveData();
+      return res.json({ status: 'allowed', executed: true, result });
+    } catch (err) {
+      entry.result = 'error';
+      entry.detail = err.message;
+      logs.push(entry); saveData();
+      return res.status(502).json({ error: 'action failed', detail: err.message });
+    }
+  }
+
+  entry.result = 'allowed';
+  logs.push(entry); saveData();
+  res.json({ status: 'allowed', executed: false, message: 'No backend for this system' });
+});
+
 function requireAuth(req, res, next) {
   if (req.session && req.session.authed) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'login required' });
@@ -171,41 +216,6 @@ app.post('/api/agents/:id/kill', (req, res) => {
   agent.active = false;
   saveData();
   res.json({ message: 'Agent killed' });
-});
-
-app.post('/api/gate', async (req, res) => {
-  const { key, action, resource, system } = req.body;
-  const agent = Array.from(agents.values()).find(a => a.key === key);
-  const entry = { timestamp: new Date().toISOString(), agentId: agent?.id || null, system: system || agent?.system || 'http', action, resource, result: 'refused' };
-
-  if (!agent || !agent.active) {
-    logs.push(entry); saveData();
-    return res.status(403).json({ error: 'invalid or killed key' });
-  }
-  if (!isAllowed(agent.permissions, action, resource)) {
-    logs.push(entry); saveData();
-    return res.status(403).json({ error: 'action not permitted' });
-  }
-
-  const backend = systems.get(entry.system);
-  if (backend && backend.handler) {
-    try {
-      const result = await backend.handler(action, resource, backend.credentials);
-      entry.result = 'allowed';
-      entry.detail = result;
-      logs.push(entry); saveData();
-      return res.json({ status: 'allowed', executed: true, result });
-    } catch (err) {
-      entry.result = 'error';
-      entry.detail = err.message;
-      logs.push(entry); saveData();
-      return res.status(502).json({ error: 'action failed', detail: err.message });
-    }
-  }
-
-  entry.result = 'allowed';
-  logs.push(entry); saveData();
-  res.json({ status: 'allowed', executed: false, message: 'No backend for this system' });
 });
 
 app.get('/api/logs', (req, res) => res.json(logs.slice(-100)));
