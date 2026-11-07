@@ -187,16 +187,26 @@
 
   <div id="overlay" class="overlay" style="display:none;">
     <div class="modal">
-      <h2>Cookie preferences</h2>
-      <p>Choose what we may store. The site cannot be used until you make a selection.</p>
-      <div class="options">
-        <label><input type="checkbox" id="essential" checked disabled> Essential (required to remember this choice)</label>
-        <label><input type="checkbox" id="analytics"> Analytics (usage statistics)</label>
-        <label><input type="checkbox" id="preferences"> Preferences (UI settings)</label>
+      <div id="step1">
+        <h2>We use cookies</h2>
+        <p>We use cookies to remember your preferences and understand how the site is used.</p>
+        <div class="buttons">
+          <button onclick="showPrefs()">Cookie preferences</button>
+          <button class="primary" onclick="acceptAll()">Accept</button>
+        </div>
       </div>
-      <div class="buttons">
-        <button onclick="saveCookie(false)">Reject all</button>
-        <button class="primary" onclick="saveCookie(true)">Accept selected</button>
+      <div id="step2" style="display:none;">
+        <h2>Cookie preferences</h2>
+        <p>Choose what we may store.</p>
+        <div class="options">
+          <label><input type="checkbox" id="essential" checked disabled> Essential (required)</label>
+          <label><input type="checkbox" id="analytics"> Analytics</label>
+          <label><input type="checkbox" id="preferences"> Preferences</label>
+        </div>
+        <div class="buttons">
+          <button onclick="rejectAll()">Reject all</button>
+          <button class="primary" onclick="saveSelected()">Save preferences</button>
+        </div>
       </div>
     </div>
   </div>
@@ -206,13 +216,28 @@
       document.getElementById('overlay').style.display = 'flex';
       document.body.style.overflow = 'hidden';
     }
-    async function saveCookie(accepted) {
+    function showPrefs() {
+      document.getElementById('step1').style.display = 'none';
+      document.getElementById('step2').style.display = 'block';
+    }
+    async function acceptAll() {
+      const choice = { essential: true, analytics: true, preferences: true, timestamp: new Date().toISOString() };
+      await store(choice);
+    }
+    async function rejectAll() {
+      const choice = { essential: true, analytics: false, preferences: false, timestamp: new Date().toISOString() };
+      await store(choice);
+    }
+    async function saveSelected() {
       const choice = {
         essential: true,
-        analytics: accepted && document.getElementById('analytics').checked,
-        preferences: accepted && document.getElementById('preferences').checked,
+        analytics: document.getElementById('analytics').checked,
+        preferences: document.getElementById('preferences').checked,
         timestamp: new Date().toISOString()
       };
+      await store(choice);
+    }
+    async function store(choice) {
       localStorage.setItem('cookie_choice', JSON.stringify(choice));
       document.getElementById('overlay').style.display = 'none';
       document.body.style.overflow = '';
