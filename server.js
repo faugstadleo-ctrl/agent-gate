@@ -27,6 +27,7 @@ let agents = new Map();
 let logs = [];
 const inflight = new Map();
 const seenNonces = new Set();
+const rateWarnSent = new Set();
 
 function loadData() {
   try {
@@ -58,7 +59,13 @@ function checkRateLimit(agent) {
   const limit = agent.hourlyLimit || 1000;
   const now = Date.now();
   agent.callTimestamps = (agent.callTimestamps || []).filter(t => now - t < 3600000);
-  if (agent.callTimestamps.length >= limit) return false;
+  const count = agent.callTimestamps.length;
+  if (count >= limit * 0.8 && !rateWarnSent.has(agent.id)) {
+    rateWarnSent.add(agent.id);
+    notify('rate_warning', { agentId: agent.id, count, limit });
+    setTimeout(() => rateWarnSent.delete(agent.id), 3600000);
+  }
+  if (count >= limit) return false;
   agent.callTimestamps.push(now);
   return true;
 }
@@ -410,5 +417,27 @@ app.post('/api/agents/:id/rotate', (req, res) => {
 });
 
 app.get('/api/logs', (req, res) => res.json(logs.slice(-100)));
+
+app.get('/api/logs/export', (req, res) => {
+  const filename = `logs-${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', 'application/json');
+  res.send(JSON.stringify(logs, null, 2));
+});
+
+app.get('/api/stats', (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const todayLogs = logs.filter(l => l.timestamp && l.timestamp.startsWith(today));
+  const allowed = todayLogs.filter(l => l.result === 'allowed').length;
+  const refused = todayLogs.filter(l => l.result === 'refused').length;
+  const errors = todayLogs.filter(l => l.result === 'error').length;
+  const byAgent = {};
+  for (const l of todayLogs) {
+    const id = l.agentId || 'unknown';
+    byAgent[id] = (byAgent[id] || 0) + 1;
+  }
+  const topAgents = Object.entries(byAgent).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  res.json({ date: today, allowed, refused, errors, total: todayLogs.length, topAgents });
+});
 
 app.listen(PORT, () => console.log(`Agent Gate listening on port ${PORT}`));
