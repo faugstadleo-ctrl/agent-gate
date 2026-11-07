@@ -412,7 +412,7 @@ app.post('/api/contact', (req, res) => {
 });
 
 app.post('/api/signup', (req, res) => {
-  const { username, password, email, business, address, phone, plan } = req.body;
+  const { username, password, email, business, street, city, postal, country, phone, plan } = req.body;
   if (!username || !password || !email) return res.status(400).json({ error: 'username, email, and password required' });
   if (Array.from(users.values()).find(u => u.username === username)) {
     return res.status(400).json({ error: 'username taken' });
@@ -421,7 +421,10 @@ app.post('/api/signup', (req, res) => {
   users.set(id, {
     id, username, password, email,
     business: business || '',
-    address: address || '',
+    street: street || '',
+    city: city || '',
+    postal: postal || '',
+    country: country || '',
     phone: phone || '',
     role: 'user',
     plan: plan || 'starter',
