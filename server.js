@@ -1,5 +1,5 @@
 const express = require('express');
-const session = require('express-session');
+const cookieSession = require('cookie-session');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
@@ -12,11 +12,12 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
 app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'agent-gate-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production', sameSite: 'lax' }
+app.use(cookieSession({
+  name: 'session',
+  keys: [process.env.SESSION_SECRET || 'agent-gate-secret'],
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax'
 }));
 app.use(express.static('public'));
 
@@ -129,7 +130,7 @@ function requireAuth(req, res, next) {
 }
 
 app.get('/login', (req, res) => {
-  res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body{background:#0f1117;color:#e6e6e6;font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}form{background:#1a1d27;padding:2rem;border-radius:8px;border:1px solid #2a2e3a}input,button{display:block;margin:0.5rem 0;padding:0.5rem;width:200px;background:#0f1117;color:#e6e6e6;border:1px solid #2a2e3a}</style></head><body><form method="POST" action="/login"><h2>Agent Gate</h2><input name="password" type="password" placeholder="Password" required><button>Login</button></form></body></html>`);
+  res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body{background:#000;color:#e0e0e0;font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}form{background:#111;padding:2rem;border-radius:8px;border:1px solid #555}input,button{display:block;margin:0.5rem 0;padding:0.5rem;width:200px;background:#000;color:#e0e0e0;border:1px solid #555}</style></head><body><form method="POST" action="/login"><h2>Agent Gate</h2><input name="password" type="password" placeholder="Password" required><button>Login</button></form></body></html>`);
 });
 
 app.post('/login', (req, res) => {
@@ -141,7 +142,8 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/login'));
+  req.session = null;
+  res.redirect('/login');
 });
 
 app.use(requireAuth);
