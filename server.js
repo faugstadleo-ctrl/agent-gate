@@ -412,17 +412,25 @@ app.post('/api/contact', (req, res) => {
 });
 
 app.post('/api/signup', (req, res) => {
-  const { username, password, plan } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  const { username, password, email, business, address, phone, plan } = req.body;
+  if (!username || !password || !email) return res.status(400).json({ error: 'username, email, and password required' });
   if (Array.from(users.values()).find(u => u.username === username)) {
     return res.status(400).json({ error: 'username taken' });
   }
   const id = uuidv4();
-  users.set(id, { id, username, password, role: 'user', plan: plan || 'starter' });
+  users.set(id, {
+    id, username, password, email,
+    business: business || '',
+    address: address || '',
+    phone: phone || '',
+    role: 'user',
+    plan: plan || 'starter',
+    createdAt: new Date().toISOString()
+  });
   saveData();
   req.session.authed = true;
   req.session.user = username;
-  logAudit(username, 'signup', { plan });
+  logAudit(username, 'signup', { plan, email });
   res.json({ ok: true });
 });
 
