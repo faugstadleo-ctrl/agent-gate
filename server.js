@@ -401,6 +401,16 @@ app.post('/api/cookie', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/contact', (req, res) => {
+  const { name, email, company, message, plan } = req.body;
+  if (!name || !email || !message) return res.status(400).json({ error: 'name, email, message required' });
+  const entry = { timestamp: new Date().toISOString(), name, email, company: company || '', message, plan: plan || 'unknown' };
+  if (!global.contacts) global.contacts = [];
+  global.contacts.push(entry);
+  console.log('CONTACT:', JSON.stringify(entry));
+  res.json({ ok: true });
+});
+
 function requireAuth(req, res, next) {
   if (req.session && req.session.authed) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'login required' });
