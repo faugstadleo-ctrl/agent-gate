@@ -37,13 +37,26 @@ function saveData() {
 }
 loadData();
 
+function isAllowed(permissions, action, resource) {
+  if (!permissions || permissions.length === 0) return true;
+  const check = resource ? `${action}:${resource}` : action;
+  return permissions.some(p => {
+    if (p === '*' || p === action || p === check) return true;
+    if (p.endsWith('*')) {
+      const prefix = p.slice(0, -1);
+      return action.startsWith(prefix) || check.startsWith(prefix);
+    }
+    return false;
+  });
+}
+
 const systems = new Map();
 
 systems.set('http', {
   handler: async (action, resource) => {
     if (!resource || !resource.startsWith('http')) throw new Error('resource must be a full URL');
-    const method = (action === 'write' || action === 'delete') ? action.toUpperCase() : 'GET';
-    const res = await fetch(resource, { method });
+    const method = (action === 'write' || action === 'delete' || action === 'POST' || action === 'PUT') ? (action.length <= 6 ? action.toUpperCase() : 'GET') : 'GET';
+    const res = await fetch(resource, { method: method === 'DELETE' ? 'DELETE' : method === 'POST' || method === 'PUT' || method === 'WRITE' ? 'POST' : 'GET' });
     const text = await res.text();
     return { status: res.status, ok: res.ok, body: text.slice(0, 500) };
   }
@@ -60,25 +73,24 @@ if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
 
   systems.set('s3', {
     handler: async (action, resource) => {
-      // resource format: bucket or bucket/key
       const [bucket, ...keyParts] = (resource || '').split('/');
       const key = keyParts.join('/');
       if (!bucket) throw new Error('resource must be bucket or bucket/key');
 
-      if (action === 'read' && !key) {
+      if ((action === 'list' || action === 'read') && !key) {
         const cmd = new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 20 });
         const out = await s3.send(cmd);
         return { objects: (out.Contents || []).map(o => o.Key) };
       }
 
-      if (action === 'read' && key) {
+      if ((action === 'get' || action === 'read') && key) {
         const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
         const out = await s3.send(cmd);
         const body = await out.Body.transformToString();
         return { key, body: body.slice(0, 500) };
       }
 
-      throw new Error('s3 only supports read for now (list bucket or get object)');
+      throw new Error('s3 supports list/read (bucket) or get/read (bucket/key)');
     }
   });
 }
@@ -138,7 +150,8 @@ app.post('/api/agents', (req, res) => {
   if (!name || !owner) return res.status(400).json({ error: 'name and owner required' });
   const id = uuidv4();
   const key = uuidv4();
-  const agent = { id, name, owner, system: system || 'http', permissions: permissions || [], key, active: true, createdAt: new Date().toISOString() };
+  const perms = Array.isArray(permissions) ? permissions : (permissions || '').split(',').map(s => s.trim()).filter(Boolean);
+  const agent = { id, name, owner, system: system || 'http', permissions: perms, key, active: true, createdAt: new Date().toISOString() };
   agents.set(id, agent);
   saveData();
   res.json({ id, key, message: 'Agent created. Store the key securely; it will not be shown again.' });
@@ -166,7 +179,7 @@ app.post('/api/gate', async (req, res) => {
     logs.push(entry); saveData();
     return res.status(403).json({ error: 'invalid or killed key' });
   }
-  if (agent.permissions.length && !agent.permissions.includes(action)) {
+  if (!isAllowed(agent.permissions, action, resource)) {
     logs.push(entry); saveData();
     return res.status(403).json({ error: 'action not permitted' });
   }
