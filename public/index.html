@@ -6,15 +6,14 @@
   <title>Agent Gate</title>
   <style>
     :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --border: #4a4e5a;
-      --text: #e6e6e6;
-      --muted: #8b8fa3;
-      --accent: #d1d5db;
-      --danger: #ff6b6b;
-      --ok: #4ade80;
-      --warn: #fbbf24;
+      --bg: #000000;
+      --surface: #111111;
+      --border: #555555;
+      --text: #e0e0e0;
+      --muted: #888888;
+      --accent: #cccccc;
+      --danger: #ff5555;
+      --ok: #55cc55;
     }
     * { box-sizing: border-box; }
     body {
@@ -51,15 +50,15 @@
       width: auto;
       margin-top: 1rem;
       background: var(--accent);
-      color: #0f1117;
+      color: #000000;
       border: none;
       cursor: pointer;
       font-weight: 500;
     }
-    button:hover { opacity: 0.9; }
+    button:hover { opacity: 0.85; }
     button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
     .key {
-      background: #1e3a2f;
+      background: #112211;
       color: var(--ok);
       padding: 0.75rem;
       border-radius: 4px;
@@ -88,8 +87,8 @@
       white-space: pre-wrap;
       word-break: break-all;
     }
-    .result.allowed { background: #1e3a2f; color: var(--ok); }
-    .result.refused, .result.error { background: #3a1e1e; color: var(--danger); }
+    .result.allowed { background: #112211; color: var(--ok); }
+    .result.refused, .result.error { background: #221111; color: var(--danger); }
     .log-entry {
       padding: 0.6rem 0;
       border-bottom: 1px solid var(--border);
@@ -104,8 +103,8 @@
       font-size: 0.75rem;
       font-weight: 500;
     }
-    .badge.allowed { background: #1e3a2f; color: var(--ok); }
-    .badge.refused, .badge.error { background: #3a1e1e; color: var(--danger); }
+    .badge.allowed { background: #112211; color: var(--ok); }
+    .badge.refused, .badge.error { background: #221111; color: var(--danger); }
   </style>
 </head>
 <body>
