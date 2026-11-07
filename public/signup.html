@@ -15,18 +15,44 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 2rem; }
-    form { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); width: 100%; max-width: 420px; }
+    form { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); width: 100%; max-width: 440px; }
     h2 { margin-bottom: 0.5rem; font-weight: 600; }
     .plan { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
-    label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
-    input { display: block; width: 100%; padding: 0.7rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 1rem; }
-    input:focus { outline: none; border-color: #888; }
-    button { display: block; width: 100%; margin-top: 1.25rem; padding: 0.75rem; background: var(--accent); color: #000; border: none; border-radius: 4px; font-size: 1rem; font-weight: 500; cursor: pointer; }
-    button:hover { opacity: 0.9; }
-    .error { color: #ff5555; margin-top: 0.75rem; font-size: 0.9rem; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.9rem 0 0.3rem; transition: color 0.15s; }
+    input {
+      display: block;
+      width: 100%;
+      padding: 0.7rem;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 1rem;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    input:focus { outline: none; border-color: #aaa; background: #0a0a0a; }
+    input:focus + .hint, .field:focus-within label { color: var(--text); }
+    button {
+      display: block;
+      width: 100%;
+      margin-top: 1.5rem;
+      padding: 0.75rem;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .error { color: #ff5555; margin-top: 0.75rem; font-size: 0.9rem; min-height: 1.2em; }
     a { color: var(--muted); font-size: 0.9rem; }
     .row { display: flex; gap: 0.75rem; }
-    .row input { flex: 1; }
+    .row > div { flex: 1; }
+    .optional { color: #666; font-weight: normal; }
   </style>
 </head>
 <body>
@@ -35,24 +61,38 @@
     <div class="plan" id="plan-label"></div>
 
     <label>Username</label>
-    <input name="username" required>
+    <input name="username" required autocomplete="username">
 
     <label>Email</label>
-    <input name="email" type="email" required>
+    <input name="email" type="email" required autocomplete="email">
 
     <label>Password</label>
-    <input name="password" type="password" required>
+    <input name="password" type="password" required autocomplete="new-password">
 
-    <label>Business name</label>
-    <input name="business">
+    <label>Business name <span class="optional">(optional)</span></label>
+    <input name="business" autocomplete="organization">
 
-    <label>Address</label>
-    <input name="address" placeholder="Street, city, country">
+    <label>Street</label>
+    <input name="street" autocomplete="street-address">
 
-    <label>Phone (optional)</label>
-    <input name="phone" type="tel">
+    <div class="row">
+      <div>
+        <label>City</label>
+        <input name="city" autocomplete="address-level2">
+      </div>
+      <div>
+        <label>Postal code</label>
+        <input name="postal" autocomplete="postal-code">
+      </div>
+    </div>
 
-    <button type="submit">Continue</button>
+    <label>Country</label>
+    <input name="country" autocomplete="country-name">
+
+    <label>Phone <span class="optional">(optional)</span></label>
+    <input name="phone" type="tel" autocomplete="tel">
+
+    <button type="submit" id="submit">Continue</button>
     <div id="error" class="error"></div>
     <p style="margin-top: 1.25rem;"><a href="/login">Already have an account?</a></p>
   </form>
@@ -63,30 +103,40 @@
 
     document.getElementById('signup').onsubmit = async (e) => {
       e.preventDefault();
+      const btn = document.getElementById('submit');
+      btn.disabled = true;
+      btn.textContent = 'Creating…';
       const form = e.target;
       const body = {
         username: form.username.value,
         email: form.email.value,
         password: form.password.value,
         business: form.business.value,
-        address: form.address.value,
+        street: form.street.value,
+        city: form.city.value,
+        postal: form.postal.value,
+        country: form.country.value,
         phone: form.phone.value,
         plan
       };
-      const res = await fetch('/api/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        document.getElementById('error').textContent = data.error || 'Signup failed';
-        return;
-      }
-      if (plan === 'team') {
-        location.href = '/payment?plan=team';
-      } else {
-        location.href = '/app';
+      try {
+        const res = await fetch('/api/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          document.getElementById('error').textContent = data.error || 'Signup failed';
+          btn.disabled = false;
+          btn.textContent = 'Continue';
+          return;
+        }
+        location.href = plan === 'team' ? '/payment?plan=team' : '/app';
+      } catch {
+        document.getElementById('error').textContent = 'Network error';
+        btn.disabled = false;
+        btn.textContent = 'Continue';
       }
     };
   </script>
