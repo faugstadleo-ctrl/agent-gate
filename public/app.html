@@ -104,6 +104,14 @@
     }
     .badge.allowed { background: #112211; color: var(--ok); }
     .badge.refused, .badge.error { background: #221111; color: var(--danger); }
+    pre {
+      background: #000;
+      border: 1px solid var(--border);
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+    }
   </style>
 </head>
 <body>
@@ -112,6 +120,21 @@
     <a href="/logout" style="color: var(--muted); text-decoration: none;">Logout</a>
   </div>
   <p class="subtitle">Agents get narrow keys. Your real credentials stay on the server. Every action is checked, executed, and logged. Kill any agent instantly.</p>
+
+  <section id="onboarding">
+    <h2>Connect an agent</h2>
+    <p>Create an agent below, then add this to your MCP client config (Claude Desktop, Cursor, etc.). Replace YOUR_AGENT_KEY with the key you receive.</p>
+    <pre>{
+  "mcpServers": {
+    "agent-gate": {
+      "url": "https://YOUR-APP.onrender.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_AGENT_KEY"
+      }
+    }
+  }
+}</pre>
+  </section>
 
   <section>
     <h2>1. Create an agent</h2>
