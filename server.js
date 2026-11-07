@@ -28,7 +28,7 @@ let logs = [];
 const inflight = new Map();
 const seenNonces = new Set();
 const rateWarnSent = new Set();
-const mcpSessions = new Map(); // sessionId -> agent key
+const mcpSessions = new Map();
 
 function loadData() {
   try {
@@ -397,7 +397,35 @@ app.get('/logout', (req, res) => { req.session = null; res.redirect('/login'); }
 
 app.use(requireAuth);
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', async (req, res) => {
+  const checks = { ok: true };
+  if (process.env.AWS_ACCESS_KEY_ID) {
+    try {
+      const s3 = new S3Client({ region: (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1').trim(), credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
+      await s3.send(new ListObjectsV2Command({ Bucket: 'nonexistent-test-bucket-xyz', MaxKeys: 1 }));
+      checks.aws = 'ok';
+    } catch (e) {
+      checks.aws = e.name === 'NoSuchBucket' || e.Code === 'NoSuchBucket' ? 'ok' : 'error';
+      if (checks.aws === 'error') checks.ok = false;
+    }
+  }
+  if (process.env.GITHUB_TOKEN) {
+    try {
+      const r = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, 'User-Agent': 'agent-gate' } });
+      checks.github = r.ok ? 'ok' : 'error';
+      if (!r.ok) checks.ok = false;
+    } catch { checks.github = 'error'; checks.ok = false; }
+  }
+  if (process.env.SLACK_BOT_TOKEN) {
+    try {
+      const r = await fetch('https://slack.com/api/auth.test', { headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` } });
+      const d = await r.json();
+      checks.slack = d.ok ? 'ok' : 'error';
+      if (!d.ok) checks.ok = false;
+    } catch { checks.slack = 'error'; checks.ok = false; }
+  }
+  res.status(checks.ok ? 200 : 503).json(checks);
+});
 
 app.post('/api/agents', (req, res) => {
   const { name, owner, permissions, system, hourlyLimit, credentials, ipAllowlist, keyExpiresInDays } = req.body;
@@ -424,6 +452,19 @@ app.get('/api/agents', (req, res) => {
   res.json(list);
 });
 
+app.patch('/api/agents/:id', (req, res) => {
+  const agent = agents.get(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'not found' });
+  const { permissions, hourlyLimit, ipAllowlist, name, owner } = req.body;
+  if (permissions) agent.permissions = Array.isArray(permissions) ? permissions : permissions.split(',').map(s => s.trim()).filter(Boolean);
+  if (hourlyLimit !== undefined) agent.hourlyLimit = hourlyLimit;
+  if (ipAllowlist !== undefined) agent.ipAllowlist = Array.isArray(ipAllowlist) ? ipAllowlist : null;
+  if (name) agent.name = name;
+  if (owner) agent.owner = owner;
+  saveData();
+  res.json({ message: 'Agent updated' });
+});
+
 app.post('/api/agents/:id/kill', async (req, res) => {
   const agent = agents.get(req.params.id);
   if (!agent) return res.status(404).json({ error: 'not found' });
@@ -447,6 +488,22 @@ app.post('/api/agents/:id/rotate', (req, res) => {
   }
   saveData();
   res.json({ key: agent.key, message: 'Key rotated. Store the new key.' });
+});
+
+app.get('/api/backup', (req, res) => {
+  const data = { agents: Array.from(agents.entries()), logs };
+  res.setHeader('Content-Disposition', 'attachment; filename="agent-gate-backup.json"');
+  res.setHeader('Content-Type', 'application/json');
+  res.send(JSON.stringify(data, null, 2));
+});
+
+app.post('/api/restore', (req, res) => {
+  const { agents: a, logs: l } = req.body;
+  if (!a || !Array.isArray(a)) return res.status(400).json({ error: 'invalid backup' });
+  agents = new Map(a);
+  logs = l || [];
+  saveData();
+  res.json({ message: 'Restored', agents: agents.size, logs: logs.length });
 });
 
 app.get('/api/logs', (req, res) => res.json(logs.slice(-100)));
