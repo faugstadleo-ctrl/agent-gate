@@ -56,7 +56,6 @@
     }
     button:hover { opacity: 0.9; }
     button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
-    .row { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
     .key {
       background: #1e3a2f;
       color: var(--ok);
@@ -89,7 +88,7 @@
     <h1>Agent Gate</h1>
     <a href="/logout" style="color: var(--muted); text-decoration: none;">Logout</a>
   </div>
-  <p class="subtitle">Agents get narrow keys. Your real credentials stay on the server. Every action is checked and logged. Kill any agent instantly.</p>
+  <p class="subtitle">Agents get narrow keys. Your real credentials stay on the server. Every action is checked, executed, and logged. Kill any agent instantly.</p>
 
   <section>
     <h2>1. Create an agent</h2>
@@ -99,10 +98,10 @@
       <label>Owner</label>
       <input type="text" id="owner" required>
       <label>System</label>
-      <input type="text" id="system" value="generic" placeholder="generic or github">
+      <input type="text" id="system" value="http" placeholder="http or github">
       <label>Permissions</label>
       <select id="perm" multiple size="4">
-        <option value="read">read</option>
+        <option value="read" selected>read</option>
         <option value="write">write</option>
         <option value="delete">delete</option>
         <option value="execute">execute</option>
@@ -122,9 +121,9 @@
     <label>Agent key</label>
     <input type="text" id="test-key">
     <label>Action</label>
-    <input type="text" id="test-action" placeholder="read / write / delete">
-    <label>Resource</label>
-    <input type="text" id="test-resource" placeholder="what it wants to touch">
+    <input type="text" id="test-action" value="read">
+    <label>Resource (full URL for http)</label>
+    <input type="text" id="test-resource" placeholder="https://example.com">
     <button onclick="testGate()">Send to gate</button>
     <pre id="gate-result"></pre>
   </section>
@@ -172,7 +171,7 @@
         body: JSON.stringify({
           name: document.getElementById('name').value,
           owner: document.getElementById('owner').value,
-          system: document.getElementById('system').value || 'generic',
+          system: document.getElementById('system').value || 'http',
           permissions: perms
         })
       });
