@@ -65,6 +65,7 @@
       margin-top: 0.5rem;
       font-family: monospace;
     }
+    .error { color: var(--danger); margin-top: 0.5rem; }
     .agent {
       display: flex;
       justify-content: space-between;
@@ -137,6 +138,10 @@
   <script>
     async function loadAgents() {
       const res = await fetch('/api/agents');
+      if (!res.ok) {
+        document.getElementById('agents').innerHTML = '<p class="error">Failed to load agents</p>';
+        return;
+      }
       const data = await res.json();
       const el = document.getElementById('agents');
       if (!data.length) {
@@ -147,7 +152,7 @@
         <div class="agent">
           <div>
             <strong>${a.name}</strong> · ${a.owner} · ${a.system}<br>
-            <span style="color: var(--muted); font-size: 0.85rem;">${a.permissions.join(', ') || 'no permissions'}</span>
+            <span style="color: var(--muted); font-size: 0.85rem;">${(a.permissions || []).join(', ') || 'no permissions'}</span>
           </div>
           <div>
             ${a.active ? '<span style="color: var(--ok);">active</span>' : '<span class="killed">killed</span>'}
@@ -176,9 +181,14 @@
         })
       });
       const data = await res.json();
-      document.getElementById('key-display').innerHTML = `
+      const display = document.getElementById('key-display');
+      if (!res.ok) {
+        display.innerHTML = `<p class="error">${data.error || 'Create failed'}</p>`;
+        return;
+      }
+      display.innerHTML = `
         <p style="margin-top: 1rem;">Key (copy it now):</p>
-        <div class="key">${data.key}</div>
+        <div class="key">${data.key || 'missing'}</div>
       `;
       loadAgents();
     };
