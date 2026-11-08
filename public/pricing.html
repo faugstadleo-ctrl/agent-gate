@@ -40,7 +40,26 @@
     footer { text-align: center; padding: 3rem; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 4rem; }
     footer a { color: var(--muted); text-decoration: none; margin: 0 0.5rem; }
     @media (max-width: 800px) { .plans { grid-template-columns: 1fr; } nav { padding: 1.25rem 1.5rem; } }
-  </style>
+  
+    .spinner-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #333;
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+</style>
 </head>
 <body>
   <nav>
@@ -88,5 +107,16 @@
     <a href="/terms">Terms of Service</a>
     <a href="/privacy">Privacy Policy</a>
   </footer>
+
+  <div id="spinner" class="spinner-overlay"><div class="spinner"></div></div>
+  <script>
+    document.querySelectorAll('.plan a').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('spinner').style.display = 'flex';
+        setTimeout(() => { location.href = a.href; }, 350);
+      });
+    });
+  </script>
 </body>
 </html>
