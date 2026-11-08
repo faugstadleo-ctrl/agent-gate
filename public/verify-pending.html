@@ -14,10 +14,21 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    .box { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); max-width: 420px; text-align: center; }
+    .box { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); max-width: 480px; text-align: center; }
     h2 { margin-bottom: 1rem; }
     p { color: var(--muted); margin-bottom: 1rem; }
     a { color: var(--text); }
+    .link {
+      display: block;
+      margin-top: 1rem;
+      padding: 0.75rem;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      word-break: break-all;
+      font-size: 0.85rem;
+      color: #55cc55;
+    }
   </style>
 </head>
 <body>
@@ -25,11 +36,21 @@
     <h2>Check your email</h2>
     <p>We sent a verification link to <strong id="email"></strong>.</p>
     <p>Click the link to activate your account.</p>
-    <p style="margin-top: 1.5rem; font-size: 0.9rem;">Didn't get it? Check spam, or <a href="/signup">try again</a>.</p>
+    <p id="dev-note" style="display:none; margin-top: 1.5rem; font-size: 0.9rem;">Email is not connected yet. Use this link:</p>
+    <a id="verify-link" class="link" style="display:none;" href="#"></a>
+    <p style="margin-top: 1.5rem; font-size: 0.9rem;"><a href="/signup">Back to signup</a></p>
   </div>
   <script>
     const params = new URLSearchParams(location.search);
     document.getElementById('email').textContent = params.get('email') || 'your email';
+    const url = params.get('url');
+    if (url) {
+      document.getElementById('dev-note').style.display = 'block';
+      const a = document.getElementById('verify-link');
+      a.href = url;
+      a.textContent = url;
+      a.style.display = 'block';
+    }
   </script>
 </body>
 </html>
