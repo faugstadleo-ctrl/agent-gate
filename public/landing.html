@@ -7,93 +7,108 @@
   <style>
     :root {
       --bg: #000000;
-      --surface: #111111;
-      --border: #555555;
-      --text: #e0e0e0;
+      --surface: #0a0a0a;
+      --border: #1f1f1f;
+      --text: #ededed;
       --muted: #888888;
       --accent: #ffffff;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.6;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
     nav {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 1.5rem 4rem;
+      padding: 1rem 2rem;
       border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(12px);
+      z-index: 50;
     }
-    .logo { font-weight: 600; font-size: 1.1rem; letter-spacing: -0.02em; }
-    .nav-links a { color: var(--muted); text-decoration: none; margin-left: 2rem; font-size: 0.95rem; }
+    .logo { font-weight: 600; font-size: 1rem; letter-spacing: -0.02em; }
+    .nav-links { display: flex; align-items: center; gap: 2rem; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: 0.875rem; }
     .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      background: var(--accent);
+      color: #000 !important;
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      font-weight: 500;
+    }
     .hero {
-      max-width: 900px;
+      max-width: 720px;
       margin: 0 auto;
-      padding: 8rem 2rem 6rem;
+      padding: 8rem 1.5rem 5rem;
       text-align: center;
     }
     .hero h1 {
-      font-size: 4rem;
+      font-size: 3.75rem;
       font-weight: 600;
       letter-spacing: -0.04em;
-      line-height: 1.1;
-      margin-bottom: 1.5rem;
+      line-height: 1.05;
+      margin-bottom: 1.25rem;
     }
     .hero p {
-      font-size: 1.25rem;
+      font-size: 1.125rem;
       color: var(--muted);
-      max-width: 640px;
-      margin: 0 auto 2.5rem;
+      max-width: 520px;
+      margin: 0 auto 2rem;
     }
+    .cta-row { display: flex; justify-content: center; gap: 0.75rem; }
     .cta {
       display: inline-block;
       background: var(--accent);
       color: #000;
-      padding: 0.85rem 1.75rem;
+      padding: 0.6rem 1.1rem;
       border-radius: 6px;
       text-decoration: none;
       font-weight: 500;
-      font-size: 1rem;
+      font-size: 0.95rem;
     }
     .cta:hover { opacity: 0.9; }
     .cta.secondary {
       background: transparent;
       color: var(--text);
       border: 1px solid var(--border);
-      margin-left: 0.75rem;
     }
     .grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 1.5rem;
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 0 2rem 6rem;
-    }
-    .card {
-      background: var(--surface);
+      gap: 1px;
+      background: var(--border);
+      max-width: 960px;
+      margin: 0 auto 6rem;
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 2rem;
+      overflow: hidden;
+    }
+    .card {
+      background: var(--bg);
+      padding: 2rem 1.75rem;
     }
     .card h3 {
-      font-size: 1.15rem;
+      font-size: 1rem;
       font-weight: 600;
-      margin-bottom: 0.75rem;
+      margin-bottom: 0.5rem;
     }
-    .card p { color: var(--muted); font-size: 0.95rem; }
+    .card p { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
     footer {
       text-align: center;
-      padding: 3rem;
+      padding: 2.5rem;
       color: var(--muted);
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       border-top: 1px solid var(--border);
     }
-    footer a { color: var(--muted); text-decoration: none; margin: 0 0.5rem; }
+    footer a { color: var(--muted); text-decoration: none; margin: 0 0.6rem; }
     footer a:hover { color: var(--text); }
     .overlay {
       position: fixed;
@@ -105,46 +120,41 @@
       justify-content: center;
     }
     .modal {
-      background: var(--surface);
+      background: #111;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 2rem;
-      max-width: 480px;
+      max-width: 440px;
       width: 90%;
     }
-    .modal h2 { margin-bottom: 0.75rem; font-size: 1.3rem; }
-    .modal p { color: var(--muted); margin-bottom: 1.25rem; font-size: 0.95rem; }
+    .modal h2 { margin-bottom: 0.5rem; font-size: 1.2rem; }
+    .modal p { color: var(--muted); margin-bottom: 1.25rem; font-size: 0.9rem; }
     .options { margin-bottom: 1.5rem; }
     .options label {
       display: flex;
       align-items: center;
       gap: 0.5rem;
       margin: 0.5rem 0;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       cursor: pointer;
     }
-    .options input { width: auto; }
-    .buttons { display: flex; gap: 0.75rem; }
+    .buttons { display: flex; gap: 0.5rem; }
     .buttons button {
       flex: 1;
-      padding: 0.6rem;
-      border-radius: 4px;
+      padding: 0.55rem;
+      border-radius: 6px;
       border: 1px solid var(--border);
       background: transparent;
       color: var(--text);
       cursor: pointer;
       font-weight: 500;
     }
-    .buttons button.primary {
-      background: var(--accent);
-      color: #000;
-      border: none;
-    }
-    @media (max-width: 800px) {
-      nav { padding: 1.25rem 1.5rem; }
-      .hero { padding: 5rem 1.5rem 3rem; }
+    .buttons button.primary { background: var(--accent); color: #000; border: none; }
+    @media (max-width: 700px) {
+      .hero { padding: 5rem 1.25rem 3rem; }
       .hero h1 { font-size: 2.5rem; }
-      .grid { grid-template-columns: 1fr; padding: 0 1.5rem 4rem; }
+      .grid { grid-template-columns: 1fr; margin: 0 1rem 4rem; }
+      nav { padding: 1rem; }
     }
   </style>
 </head>
@@ -155,14 +165,17 @@
       <a href="#how">How it works</a>
       <a href="/pricing">Pricing</a>
       <a href="/login">Login</a>
+      <a href="/signup" class="nav-cta">Get started</a>
     </div>
   </nav>
 
   <section class="hero">
     <h1>Agents get narrow keys.<br>You keep the real ones.</h1>
     <p>Stop handing AI agents broad credentials. Agent Gate sits in front of AWS, GitHub, Slack, and any API. Every action is checked, logged, and revocable.</p>
-    <a href="/login" class="cta">Get started</a>
-    <a href="#how" class="cta secondary">See how</a>
+    <div class="cta-row">
+      <a href="/signup" class="cta">Get started</a>
+      <a href="#how" class="cta secondary">See how</a>
+    </div>
   </section>
 
   <section id="how" class="grid">
@@ -184,7 +197,7 @@
     <a href="/terms">Terms of Service</a>
     <a href="/privacy">Privacy Policy</a>
     <a href="/pricing">Pricing</a>
-    <div style="margin-top: 0.75rem;">Agent Gate · Control plane for agent credentials</div>
+    <div style="margin-top: 0.6rem;">Agent Gate</div>
   </footer>
 
   <div id="overlay" class="overlay" style="display:none;">
