@@ -7,6 +7,11 @@ const path = require('path');
 const { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const app = express();
 let stripe = null;
+let resend = null;
+if (process.env.RESEND_API_KEY) {
+  const { Resend } = require('resend');
+  resend = new Resend(process.env.RESEND_API_KEY);
+}
 if (process.env.STRIPE_SECRET_KEY) {
   stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 }
@@ -466,7 +471,7 @@ app.post('/api/contact', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/signup', (req, res) => {
+app.post('/api/signup', async (req, res) => {
   const { username, password, email, business, street, city, postal, country, phone, plan } = req.body;
   if (!username || !password || !email) return res.status(400).json({ error: 'username, email, and password required' });
   const existing = Array.from(users.values()).find(u => u.username === username);
@@ -493,8 +498,18 @@ app.post('/api/signup', (req, res) => {
   saveData();
   const verifyUrl = `${req.protocol}://${req.get('host')}/verify?token=${verifyToken}`;
   console.log('VERIFY EMAIL to', email, ':', verifyUrl);
+  if (resend) {
+    try {
+      await resend.emails.send({
+        from: 'Agent Gate <onboarding@resend.dev>',
+        to: email,
+        subject: 'Verify your Agent Gate account',
+        html: `<p>Click to verify your account:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`
+      });
+    } catch (e) { console.error('Email failed', e); }
+  }
   logAudit(username, 'signup', { plan, email, verifyUrl });
-  res.json({ ok: true, verifyUrl });
+  res.json({ ok: true, verifyUrl: resend ? undefined : verifyUrl });
 });
 
 function requireAuth(req, res, next) {
