@@ -52,7 +52,7 @@
     .row { display: flex; gap: 0.75rem; }
     .row > div { flex: 1; }
     .phone-row { display: flex; gap: 0.5rem; }
-    .phone-row select { width: 110px; flex-shrink: 0; }
+    .phone-row select { width: 130px; flex-shrink: 0; }
     .phone-row input { flex: 1; }
     .optional { color: #666; }
     #suggestions {
@@ -135,20 +135,7 @@
 
     <label>Phone <span class="optional">(optional)</span></label>
     <div class="phone-row">
-      <select id="phone-code" name="phoneCode">
-        <option value="+1">US +1</option>
-        <option value="+44">UK +44</option>
-        <option value="+47">NO +47</option>
-        <option value="+46">SE +46</option>
-        <option value="+45">DK +45</option>
-        <option value="+49">DE +49</option>
-        <option value="+33">FR +33</option>
-        <option value="+31">NL +31</option>
-        <option value="+34">ES +34</option>
-        <option value="+39">IT +39</option>
-        <option value="+61">AU +61</option>
-        <option value="+81">JP +81</option>
-      </select>
+      <select id="phone-code" name="phoneCode"></select>
       <input name="phone" type="tel" inputmode="numeric" placeholder="Phone number" autocomplete="tel">
     </div>
 
@@ -160,6 +147,65 @@
   <div id="spinner" class="spinner-overlay"><div class="spinner"></div></div>
 
   <script>
+    const countries = [
+      { c: '+1', f: '🇺🇸', n: 'US' },
+      { c: '+1', f: '🇨🇦', n: 'CA' },
+      { c: '+44', f: '🇬🇧', n: 'UK' },
+      { c: '+47', f: '🇳🇴', n: 'NO' },
+      { c: '+46', f: '🇸🇪', n: 'SE' },
+      { c: '+45', f: '🇩🇰', n: 'DK' },
+      { c: '+49', f: '🇩🇪', n: 'DE' },
+      { c: '+33', f: '🇫🇷', n: 'FR' },
+      { c: '+31', f: '🇳🇱', n: 'NL' },
+      { c: '+34', f: '🇪🇸', n: 'ES' },
+      { c: '+39', f: '🇮🇹', n: 'IT' },
+      { c: '+41', f: '🇨🇭', n: 'CH' },
+      { c: '+43', f: '🇦🇹', n: 'AT' },
+      { c: '+32', f: '🇧🇪', n: 'BE' },
+      { c: '+48', f: '🇵🇱', n: 'PL' },
+      { c: '+351', f: '🇵🇹', n: 'PT' },
+      { c: '+353', f: '🇮🇪', n: 'IE' },
+      { c: '+358', f: '🇫🇮', n: 'FI' },
+      { c: '+61', f: '🇦🇺', n: 'AU' },
+      { c: '+64', f: '🇳🇿', n: 'NZ' },
+      { c: '+81', f: '🇯🇵', n: 'JP' },
+      { c: '+82', f: '🇰🇷', n: 'KR' },
+      { c: '+86', f: '🇨🇳', n: 'CN' },
+      { c: '+91', f: '🇮🇳', n: 'IN' },
+      { c: '+55', f: '🇧🇷', n: 'BR' },
+      { c: '+52', f: '🇲🇽', n: 'MX' },
+      { c: '+54', f: '🇦🇷', n: 'AR' },
+      { c: '+27', f: '🇿🇦', n: 'ZA' },
+      { c: '+971', f: '🇦🇪', n: 'AE' },
+      { c: '+972', f: '🇮🇱', n: 'IL' },
+      { c: '+90', f: '🇹🇷', n: 'TR' },
+      { c: '+7', f: '🇷🇺', n: 'RU' },
+      { c: '+380', f: '🇺🇦', n: 'UA' },
+      { c: '+48', f: '🇵🇱', n: 'PL' },
+      { c: '+420', f: '🇨🇿', n: 'CZ' },
+      { c: '+36', f: '🇭🇺', n: 'HU' },
+      { c: '+30', f: '🇬🇷', n: 'GR' },
+      { c: '+40', f: '🇷🇴', n: 'RO' },
+      { c: '+359', f: '🇧🇬', n: 'BG' },
+      { c: '+385', f: '🇭🇷', n: 'HR' },
+      { c: '+386', f: '🇸🇮', n: 'SI' },
+      { c: '+421', f: '🇸🇰', n: 'SK' },
+      { c: '+370', f: '🇱🇹', n: 'LT' },
+      { c: '+371', f: '🇱🇻', n: 'LV' },
+      { c: '+372', f: '🇪🇪', n: 'EE' },
+      { c: '+354', f: '🇮🇸', n: 'IS' },
+      { c: '+356', f: '🇲🇹', n: 'MT' },
+      { c: '+357', f: '🇨🇾', n: 'CY' },
+      { c: '+352', f: '🇱🇺', n: 'LU' }
+    ];
+    const phoneSelect = document.getElementById('phone-code');
+    countries.forEach(x => {
+      const opt = document.createElement('option');
+      opt.value = x.c;
+      opt.textContent = x.f + ' ' + x.c;
+      phoneSelect.appendChild(opt);
+    });
+
     const params = new URLSearchParams(location.search);
     const plan = params.get('plan') || 'starter';
     document.getElementById('plan-label').textContent = plan === 'team' ? 'Team plan — $49/month' : 'Starter plan — free';
