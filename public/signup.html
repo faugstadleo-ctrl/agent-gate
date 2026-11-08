@@ -339,7 +339,7 @@
           return;
         }
         setTimeout(() => {
-          location.href = '/verify-pending?email=' + encodeURIComponent(body.email);
+          location.href = '/verify-pending?email=' + encodeURIComponent(body.email) + (data.verifyUrl ? '&url=' + encodeURIComponent(data.verifyUrl) : '');
         }, 400);
       } catch {
         document.getElementById('spinner').style.display = 'none';
