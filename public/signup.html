@@ -15,10 +15,10 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 2rem; }
-    form { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); width: 100%; max-width: 440px; }
+    form { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); width: 100%; max-width: 440px; position: relative; }
     h2 { margin-bottom: 0.5rem; font-weight: 600; }
     .plan { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
-    label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.9rem 0 0.3rem; transition: color 0.15s; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.9rem 0 0.3rem; }
     input {
       display: block;
       width: 100%;
@@ -28,10 +28,8 @@
       border: 1px solid var(--border);
       border-radius: 4px;
       font-size: 1rem;
-      transition: border-color 0.15s, background 0.15s;
     }
-    input:focus { outline: none; border-color: #aaa; background: #0a0a0a; }
-    input:focus + .hint, .field:focus-within label { color: var(--text); }
+    input:focus { outline: none; border-color: #aaa; }
     button {
       display: block;
       width: 100%;
@@ -44,7 +42,6 @@
       font-size: 1rem;
       font-weight: 500;
       cursor: pointer;
-      transition: opacity 0.15s;
     }
     button:hover { opacity: 0.85; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -52,7 +49,27 @@
     a { color: var(--muted); font-size: 0.9rem; }
     .row { display: flex; gap: 0.75rem; }
     .row > div { flex: 1; }
-    .optional { color: #666; font-weight: normal; }
+    .optional { color: #666; }
+    #suggestions {
+      position: absolute;
+      left: 2.5rem;
+      right: 2.5rem;
+      background: #1a1a1a;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 10;
+      display: none;
+    }
+    #suggestions div {
+      padding: 0.6rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+      border-bottom: 1px solid #222;
+    }
+    #suggestions div:hover { background: #222; }
+    #suggestions div:last-child { border-bottom: none; }
   </style>
 </head>
 <body>
@@ -71,6 +88,10 @@
 
     <label>Business name <span class="optional">(optional)</span></label>
     <input name="business" autocomplete="organization">
+
+    <label>Address</label>
+    <input id="address-search" name="address-search" placeholder="Start typing an address" autocomplete="off">
+    <div id="suggestions"></div>
 
     <label>Street</label>
     <input name="street" autocomplete="street-address">
@@ -100,6 +121,43 @@
     const params = new URLSearchParams(location.search);
     const plan = params.get('plan') || 'starter';
     document.getElementById('plan-label').textContent = plan === 'team' ? 'Team plan — $49/month' : 'Starter plan — free';
+
+    const searchInput = document.getElementById('address-search');
+    const suggestions = document.getElementById('suggestions');
+    let debounce;
+
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounce);
+      const q = searchInput.value.trim();
+      if (q.length < 3) { suggestions.style.display = 'none'; return; }
+      debounce = setTimeout(async () => {
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&addressdetails=1&limit=5`, {
+            headers: { 'Accept-Language': 'en' }
+          });
+          const data = await res.json();
+          if (!data.length) { suggestions.style.display = 'none'; return; }
+          suggestions.innerHTML = data.map((item, i) => `<div data-i="${i}">${item.display_name}</div>`).join('');
+          suggestions.style.display = 'block';
+          suggestions.querySelectorAll('div').forEach(el => {
+            el.onclick = () => {
+              const item = data[el.dataset.i];
+              const a = item.address || {};
+              document.querySelector('[name=street]').value = [a.house_number, a.road].filter(Boolean).join(' ') || item.display_name.split(',')[0];
+              document.querySelector('[name=city]').value = a.city || a.town || a.village || a.municipality || '';
+              document.querySelector('[name=postal]').value = a.postcode || '';
+              document.querySelector('[name=country]').value = a.country || '';
+              searchInput.value = item.display_name;
+              suggestions.style.display = 'none';
+            };
+          });
+        } catch { suggestions.style.display = 'none'; }
+      }, 300);
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) suggestions.style.display = 'none';
+    });
 
     document.getElementById('signup').onsubmit = async (e) => {
       e.preventDefault();
@@ -132,7 +190,7 @@
           btn.textContent = 'Continue';
           return;
         }
-        location.href = plan === 'team' ? '/payment?plan=team' : '/app';
+        location.href = '/verify-pending?email=' + encodeURIComponent(body.email);
       } catch {
         document.getElementById('error').textContent = 'Network error';
         btn.disabled = false;
