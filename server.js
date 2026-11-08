@@ -469,12 +469,13 @@ app.post('/api/contact', (req, res) => {
 app.post('/api/signup', (req, res) => {
   const { username, password, email, business, street, city, postal, country, phone, plan } = req.body;
   if (!username || !password || !email) return res.status(400).json({ error: 'username, email, and password required' });
-  if (Array.from(users.values()).find(u => u.username === username)) {
+  const existing = Array.from(users.values()).find(u => u.username === username);
+  if (existing && existing.verified) {
     return res.status(400).json({ error: 'username taken' });
   }
-  const id = uuidv4();
+  const id = existing ? existing.id : uuidv4();
   const verifyToken = uuidv4();
-  users.set(id, {
+  const user = {
     id, username, password, email,
     business: business || '',
     street: street || '',
@@ -486,8 +487,9 @@ app.post('/api/signup', (req, res) => {
     plan: plan || 'starter',
     verified: false,
     verifyToken,
-    createdAt: new Date().toISOString()
-  });
+    createdAt: existing ? existing.createdAt : new Date().toISOString()
+  };
+  users.set(id, user);
   saveData();
   const verifyUrl = `${req.protocol}://${req.get('host')}/verify?token=${verifyToken}`;
   console.log('VERIFY EMAIL to', email, ':', verifyUrl);
