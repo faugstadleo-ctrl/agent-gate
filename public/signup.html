@@ -31,6 +31,7 @@
     }
     input:focus, select:focus { outline: none; border-color: #aaa; }
     input.invalid { border-color: #ff5555; }
+    input.valid { border-color: #55cc55; }
     button {
       display: block;
       width: 100%;
@@ -74,6 +75,24 @@
     }
     #suggestions div:hover { background: #222; }
     #suggestions div:last-child { border-bottom: none; }
+    .spinner-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #333;
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -137,6 +156,9 @@
     <div id="error" class="error"></div>
     <p style="margin-top: 1.25rem;"><a href="/login">Already have an account?</a></p>
   </form>
+
+  <div id="spinner" class="spinner-overlay"><div class="spinner"></div></div>
+
   <script>
     const params = new URLSearchParams(location.search);
     const plan = params.get('plan') || 'starter';
@@ -149,36 +171,55 @@
 
     phoneInput.addEventListener('input', () => {
       phoneInput.value = phoneInput.value.replace(/[^0-9]/g, '');
+      checkPhone();
     });
 
     function isValidEmail(v) {
       return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
     }
 
+    function setState(el, valid) {
+      el.classList.remove('invalid', 'valid');
+      if (el.value.trim() === '') return;
+      el.classList.add(valid ? 'valid' : 'invalid');
+    }
+
+    function checkUsername() {
+      const ok = usernameInput.value.trim().length >= 3;
+      setState(usernameInput, ok);
+      return ok;
+    }
+    function checkEmail() {
+      const ok = isValidEmail(emailInput.value.trim());
+      setState(emailInput, ok);
+      return ok;
+    }
+    function checkPassword() {
+      const ok = passwordInput.value.length >= 8;
+      setState(passwordInput, ok);
+      return ok;
+    }
+    function checkPhone() {
+      const v = phoneInput.value;
+      if (!v) { phoneInput.classList.remove('invalid', 'valid'); return true; }
+      const ok = v.length >= 6 && v.length <= 15;
+      setState(phoneInput, ok);
+      return ok;
+    }
+
+    usernameInput.addEventListener('input', checkUsername);
+    emailInput.addEventListener('input', checkEmail);
+    passwordInput.addEventListener('input', checkPassword);
+    phoneInput.addEventListener('input', checkPhone);
+
     function validate() {
-      let ok = true;
       const err = document.getElementById('error');
       err.textContent = '';
-      [usernameInput, emailInput, passwordInput].forEach(el => el.classList.remove('invalid'));
-
-      if (usernameInput.value.trim().length < 3) {
-        usernameInput.classList.add('invalid');
-        err.textContent = 'Username must be at least 3 characters';
-        ok = false;
-      } else if (!isValidEmail(emailInput.value.trim())) {
-        emailInput.classList.add('invalid');
-        err.textContent = 'Enter a valid email';
-        ok = false;
-      } else if (passwordInput.value.length < 8) {
-        passwordInput.classList.add('invalid');
-        err.textContent = 'Password must be at least 8 characters';
-        ok = false;
-      } else if (phoneInput.value && (phoneInput.value.length < 6 || phoneInput.value.length > 15)) {
-        phoneInput.classList.add('invalid');
-        err.textContent = 'Phone must be 6–15 digits';
-        ok = false;
-      }
-      return ok;
+      if (!checkUsername()) { err.textContent = 'Username must be at least 3 characters'; return false; }
+      if (!checkEmail()) { err.textContent = 'Enter a valid email'; return false; }
+      if (!checkPassword()) { err.textContent = 'Password must be at least 8 characters'; return false; }
+      if (!checkPhone()) { err.textContent = 'Phone must be 6–15 digits'; return false; }
+      return true;
     }
 
     const searchInput = document.getElementById('address-search');
@@ -218,12 +259,14 @@
       if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) suggestions.style.display = 'none';
     });
 
+    function showSpinner() {
+      document.getElementById('spinner').style.display = 'flex';
+    }
+
     document.getElementById('signup').onsubmit = async (e) => {
       e.preventDefault();
       if (!validate()) return;
-      const btn = document.getElementById('submit');
-      btn.disabled = true;
-      btn.textContent = 'Creating…';
+      showSpinner();
       const form = e.target;
       const body = {
         username: form.username.value.trim(),
@@ -245,16 +288,16 @@
         });
         const data = await res.json();
         if (!res.ok) {
+          document.getElementById('spinner').style.display = 'none';
           document.getElementById('error').textContent = data.error || 'Signup failed';
-          btn.disabled = false;
-          btn.textContent = 'Continue';
           return;
         }
-        location.href = '/verify-pending?email=' + encodeURIComponent(body.email);
+        setTimeout(() => {
+          location.href = '/verify-pending?email=' + encodeURIComponent(body.email);
+        }, 400);
       } catch {
+        document.getElementById('spinner').style.display = 'none';
         document.getElementById('error').textContent = 'Network error';
-        btn.disabled = false;
-        btn.textContent = 'Continue';
       }
     };
   </script>
