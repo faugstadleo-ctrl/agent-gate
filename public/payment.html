@@ -15,32 +15,63 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    form { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); min-width: 320px; }
+    .box { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); min-width: 320px; text-align: center; }
     h2 { margin-bottom: 0.5rem; font-weight: 600; }
     .price { color: var(--muted); margin-bottom: 1.5rem; }
-    input, button { display: block; margin: 0.6rem 0; padding: 0.7rem; width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 1rem; }
-    button { background: var(--accent); color: #000; border: none; font-weight: 500; cursor: pointer; }
-    #msg { margin-top: 0.75rem; color: var(--muted); }
+    button {
+      display: block;
+      width: 100%;
+      margin: 0.5rem 0;
+      padding: 0.75rem;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    #msg { margin-top: 1rem; color: var(--muted); font-size: 0.9rem; }
+    .spinner-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none;
+      align-items: center; justify-content: center; z-index: 999;
+    }
+    .spinner {
+      width: 36px; height: 36px; border: 3px solid #333; border-top-color: #fff;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <form id="pay">
+  <div class="box">
     <h2>Team plan</h2>
     <div class="price">$49 / month</div>
-    <input id="card" placeholder="Card number" required>
-    <input id="exp" placeholder="MM/YY" required>
-    <input id="cvc" placeholder="CVC" required>
-    <button type="submit">Pay $49</button>
+    <button id="card">Pay with card</button>
+    <button id="ach" class="secondary">Pay with bank (ACH)</button>
     <div id="msg"></div>
-  </form>
+  </div>
+  <div id="spinner" class="spinner-overlay"><div class="spinner"></div></div>
+
   <script>
-    document.getElementById('pay').onsubmit = async (e) => {
-      e.preventDefault();
-      const msg = document.getElementById('msg');
-      msg.textContent = 'Payment processing is not connected yet. This is a placeholder.';
-      // In production this would call Stripe or similar
-      setTimeout(() => { location.href = '/app'; }, 1500);
-    };
+    async function checkout(method) {
+      document.getElementById('spinner').style.display = 'flex';
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method })
+      });
+      const data = await res.json();
+      if (data.url) {
+        location.href = data.url;
+      } else {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('msg').textContent = data.error || 'Payment not available yet';
+      }
+    }
+    document.getElementById('card').onclick = () => checkout('card');
+    document.getElementById('ach').onclick = () => checkout('ach');
   </script>
 </body>
 </html>
