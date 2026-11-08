@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify email — Agent Gate</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --surface: #111111;
+      --border: #555555;
+      --text: #e0e0e0;
+      --muted: #888888;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .box { background: var(--surface); padding: 2.5rem; border-radius: 8px; border: 1px solid var(--border); max-width: 420px; text-align: center; }
+    h2 { margin-bottom: 1rem; }
+    p { color: var(--muted); margin-bottom: 1rem; }
+    a { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Check your email</h2>
+    <p>We sent a verification link to <strong id="email"></strong>.</p>
+    <p>Click the link to activate your account.</p>
+    <p style="margin-top: 1.5rem; font-size: 0.9rem;">Didn't get it? Check spam, or <a href="/signup">try again</a>.</p>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    document.getElementById('email').textContent = params.get('email') || 'your email';
+  </script>
+</body>
+</html>
