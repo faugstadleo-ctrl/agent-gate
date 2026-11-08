@@ -498,18 +498,25 @@ app.post('/api/signup', async (req, res) => {
   saveData();
   const verifyUrl = `${req.protocol}://${req.get('host')}/verify?token=${verifyToken}`;
   console.log('VERIFY EMAIL to', email, ':', verifyUrl);
+  let emailSent = false;
   if (resend) {
     try {
-      await resend.emails.send({
+      const result = await resend.emails.send({
         from: 'Agent Gate <onboarding@resend.dev>',
         to: email,
         subject: 'Verify your Agent Gate account',
         html: `<p>Click to verify your account:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`
       });
-    } catch (e) { console.error('Email failed', e); }
+      console.log('Resend result:', JSON.stringify(result));
+      emailSent = true;
+    } catch (e) {
+      console.error('Email failed:', e.message || e);
+    }
+  } else {
+    console.log('RESEND_API_KEY not set');
   }
-  logAudit(username, 'signup', { plan, email, verifyUrl });
-  res.json({ ok: true, verifyUrl: resend ? undefined : verifyUrl });
+  logAudit(username, 'signup', { plan, email, verifyUrl, emailSent });
+  res.json({ ok: true, verifyUrl });
 });
 
 function requireAuth(req, res, next) {
