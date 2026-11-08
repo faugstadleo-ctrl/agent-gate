@@ -418,6 +418,7 @@ app.post('/api/signup', (req, res) => {
     return res.status(400).json({ error: 'username taken' });
   }
   const id = uuidv4();
+  const verifyToken = uuidv4();
   users.set(id, {
     id, username, password, email,
     business: business || '',
@@ -428,13 +429,15 @@ app.post('/api/signup', (req, res) => {
     phone: phone || '',
     role: 'user',
     plan: plan || 'starter',
+    verified: false,
+    verifyToken,
     createdAt: new Date().toISOString()
   });
   saveData();
-  req.session.authed = true;
-  req.session.user = username;
-  logAudit(username, 'signup', { plan, email });
-  res.json({ ok: true });
+  const verifyUrl = `${req.protocol}://${req.get('host')}/verify?token=${verifyToken}`;
+  console.log('VERIFY EMAIL to', email, ':', verifyUrl);
+  logAudit(username, 'signup', { plan, email, verifyUrl });
+  res.json({ ok: true, verifyUrl });
 });
 
 function requireAuth(req, res, next) {
@@ -452,6 +455,19 @@ app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'ter
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
 app.get('/pricing', (req, res) => res.sendFile(path.join(__dirname, 'public', 'pricing.html')));
 app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'public', 'signup.html')));
+app.get('/verify-pending', (req, res) => res.sendFile(path.join(__dirname, 'public', 'verify-pending.html')));
+app.get('/verify', (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(400).send('Missing token');
+  const user = Array.from(users.values()).find(u => u.verifyToken === token);
+  if (!user) return res.status(400).send('Invalid or expired token');
+  user.verified = true;
+  delete user.verifyToken;
+  saveData();
+  req.session.authed = true;
+  req.session.user = user.username;
+  res.redirect(user.plan === 'team' ? '/payment?plan=team' : '/app');
+});
 app.get('/contact', (req, res) => res.sendFile(path.join(__dirname, 'public', 'contact.html')));
 app.get('/payment', (req, res) => res.sendFile(path.join(__dirname, 'public', 'payment.html')));
 
