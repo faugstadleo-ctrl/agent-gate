@@ -19,7 +19,7 @@
     h2 { margin-bottom: 0.5rem; font-weight: 600; }
     .plan { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
     label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.9rem 0 0.3rem; }
-    input {
+    input, select {
       display: block;
       width: 100%;
       padding: 0.7rem;
@@ -29,7 +29,8 @@
       border-radius: 4px;
       font-size: 1rem;
     }
-    input:focus { outline: none; border-color: #aaa; }
+    input:focus, select:focus { outline: none; border-color: #aaa; }
+    input.invalid { border-color: #ff5555; }
     button {
       display: block;
       width: 100%;
@@ -49,6 +50,9 @@
     a { color: var(--muted); font-size: 0.9rem; }
     .row { display: flex; gap: 0.75rem; }
     .row > div { flex: 1; }
+    .phone-row { display: flex; gap: 0.5rem; }
+    .phone-row select { width: 110px; flex-shrink: 0; }
+    .phone-row input { flex: 1; }
     .optional { color: #666; }
     #suggestions {
       position: absolute;
@@ -73,18 +77,18 @@
   </style>
 </head>
 <body>
-  <form id="signup">
+  <form id="signup" novalidate>
     <h2>Create account</h2>
     <div class="plan" id="plan-label"></div>
 
     <label>Username</label>
-    <input name="username" required autocomplete="username">
+    <input name="username" required autocomplete="username" minlength="3">
 
     <label>Email</label>
     <input name="email" type="email" required autocomplete="email">
 
     <label>Password</label>
-    <input name="password" type="password" required autocomplete="new-password">
+    <input name="password" type="password" required autocomplete="new-password" minlength="8">
 
     <label>Business name <span class="optional">(optional)</span></label>
     <input name="business" autocomplete="organization">
@@ -111,7 +115,23 @@
     <input name="country" autocomplete="country-name">
 
     <label>Phone <span class="optional">(optional)</span></label>
-    <input name="phone" type="tel" autocomplete="tel">
+    <div class="phone-row">
+      <select id="phone-code" name="phoneCode">
+        <option value="+1">US +1</option>
+        <option value="+44">UK +44</option>
+        <option value="+47">NO +47</option>
+        <option value="+46">SE +46</option>
+        <option value="+45">DK +45</option>
+        <option value="+49">DE +49</option>
+        <option value="+33">FR +33</option>
+        <option value="+31">NL +31</option>
+        <option value="+34">ES +34</option>
+        <option value="+39">IT +39</option>
+        <option value="+61">AU +61</option>
+        <option value="+81">JP +81</option>
+      </select>
+      <input name="phone" type="tel" inputmode="numeric" placeholder="Phone number" autocomplete="tel">
+    </div>
 
     <button type="submit" id="submit">Continue</button>
     <div id="error" class="error"></div>
@@ -121,6 +141,45 @@
     const params = new URLSearchParams(location.search);
     const plan = params.get('plan') || 'starter';
     document.getElementById('plan-label').textContent = plan === 'team' ? 'Team plan — $49/month' : 'Starter plan — free';
+
+    const emailInput = document.querySelector('[name=email]');
+    const phoneInput = document.querySelector('[name=phone]');
+    const usernameInput = document.querySelector('[name=username]');
+    const passwordInput = document.querySelector('[name=password]');
+
+    phoneInput.addEventListener('input', () => {
+      phoneInput.value = phoneInput.value.replace(/[^0-9]/g, '');
+    });
+
+    function isValidEmail(v) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
+    }
+
+    function validate() {
+      let ok = true;
+      const err = document.getElementById('error');
+      err.textContent = '';
+      [usernameInput, emailInput, passwordInput].forEach(el => el.classList.remove('invalid'));
+
+      if (usernameInput.value.trim().length < 3) {
+        usernameInput.classList.add('invalid');
+        err.textContent = 'Username must be at least 3 characters';
+        ok = false;
+      } else if (!isValidEmail(emailInput.value.trim())) {
+        emailInput.classList.add('invalid');
+        err.textContent = 'Enter a valid email';
+        ok = false;
+      } else if (passwordInput.value.length < 8) {
+        passwordInput.classList.add('invalid');
+        err.textContent = 'Password must be at least 8 characters';
+        ok = false;
+      } else if (phoneInput.value && (phoneInput.value.length < 6 || phoneInput.value.length > 15)) {
+        phoneInput.classList.add('invalid');
+        err.textContent = 'Phone must be 6–15 digits';
+        ok = false;
+      }
+      return ok;
+    }
 
     const searchInput = document.getElementById('address-search');
     const suggestions = document.getElementById('suggestions');
@@ -161,20 +220,21 @@
 
     document.getElementById('signup').onsubmit = async (e) => {
       e.preventDefault();
+      if (!validate()) return;
       const btn = document.getElementById('submit');
       btn.disabled = true;
       btn.textContent = 'Creating…';
       const form = e.target;
       const body = {
-        username: form.username.value,
-        email: form.email.value,
+        username: form.username.value.trim(),
+        email: form.email.value.trim(),
         password: form.password.value,
-        business: form.business.value,
-        street: form.street.value,
-        city: form.city.value,
-        postal: form.postal.value,
-        country: form.country.value,
-        phone: form.phone.value,
+        business: form.business.value.trim(),
+        street: form.street.value.trim(),
+        city: form.city.value.trim(),
+        postal: form.postal.value.trim(),
+        country: form.country.value.trim(),
+        phone: form.phone.value ? (form.phoneCode.value + form.phone.value) : '',
         plan
       };
       try {
