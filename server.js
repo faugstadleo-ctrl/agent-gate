@@ -562,6 +562,10 @@ app.post('/login', (req, res) => {
 app.get('/logout', (req, res) => { req.session = null; res.redirect('/'); });
 
 app.get('/app', requireAuth, (req, res) => {
+  const user = Array.from(users.values()).find(u => u.username === req.session.user);
+  if (user && user.plan === 'team' && !user.paid) {
+    return res.redirect('/payment?plan=team');
+  }
   res.sendFile(path.join(__dirname, 'public', 'app.html'));
 });
 
