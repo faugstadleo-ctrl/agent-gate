@@ -6,6 +6,10 @@ const fs = require('fs');
 const path = require('path');
 const { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const app = express();
+let stripe = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+}
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
@@ -399,6 +403,57 @@ app.post('/api/cookie', (req, res) => {
   cookieLogs.push({ timestamp: new Date().toISOString(), choice: req.body.choice, ip });
   saveData();
   res.json({ ok: true });
+});
+
+app.post('/api/checkout', async (req, res) => {
+  if (!req.session || !req.session.user) return res.status(401).json({ error: 'login required' });
+  if (!stripe) return res.status(503).json({ error: 'Payments not configured' });
+  const { method } = req.body;
+  const user = Array.from(users.values()).find(u => u.username === req.session.user);
+  if (!user) return res.status(400).json({ error: 'user not found' });
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer_email: user.email,
+      payment_method_types: method === 'ach' ? ['us_bank_account'] : ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: { name: 'Agent Gate Team' },
+          unit_amount: 4900,
+          recurring: { interval: 'month' }
+        },
+        quantity: 1
+      }],
+      success_url: `${req.protocol}://${req.get('host')}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.protocol}://${req.get('host')}/payment?plan=team`,
+      metadata: { username: user.username }
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/payment-success', async (req, res) => {
+  if (!stripe) return res.redirect('/app');
+  const sessionId = req.query.session_id;
+  if (!sessionId) return res.redirect('/app');
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status === 'paid' || session.status === 'complete') {
+      const username = session.metadata && session.metadata.username;
+      const user = Array.from(users.values()).find(u => u.username === username);
+      if (user) {
+        user.paid = true;
+        user.stripeCustomerId = session.customer;
+        saveData();
+      }
+    }
+  } catch (e) { console.error(e); }
+  res.redirect('/app');
 });
 
 app.post('/api/contact', (req, res) => {
