@@ -7,52 +7,105 @@
   <style>
     :root {
       --bg: #000000;
-      --surface: #111111;
-      --border: #555555;
-      --text: #e0e0e0;
+      --surface: #0a0a0a;
+      --border: #1f1f1f;
+      --text: #ededed;
       --muted: #888888;
-      --accent: #cccccc;
+      --accent: #ffffff;
       --danger: #ff5555;
       --ok: #55cc55;
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: system-ui, sans-serif;
-      background: var(--bg);
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(160deg, #000000 0%, #0c0c12 45%, #000000 100%);
       color: var(--text);
-      margin: 0;
-      padding: 2rem 3rem;
       line-height: 1.5;
+      min-height: 100vh;
     }
-    h1 { margin: 0; }
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .logo { font-weight: 600; font-size: 1rem; letter-spacing: -0.02em; text-decoration: none; color: var(--text); }
+    .nav-right { display: flex; align-items: center; gap: 1rem; position: relative; }
+    .nav-right a { color: var(--muted); text-decoration: none; font-size: 0.875rem; }
+    .nav-right a:hover { color: var(--text); }
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #222;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .dropdown {
+      position: absolute;
+      top: 42px;
+      right: 0;
+      background: #111;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-width: 180px;
+      padding: 0.5rem 0;
+      display: none;
+      z-index: 100;
+    }
+    .dropdown a, .dropdown button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 0.6rem 1rem;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 0.875rem;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .dropdown a:hover, .dropdown button:hover { background: #1a1a1a; }
+    .container { max-width: 800px; margin: 0 auto; padding: 2rem 1.5rem; }
     .subtitle { color: var(--muted); margin-bottom: 2rem; }
     section {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 1.25rem;
+      padding: 1.5rem;
       margin-bottom: 1.5rem;
     }
-    h2 { margin-top: 0; font-size: 1.1rem; }
-    label { display: block; margin: 0.75rem 0 0.25rem; font-size: 0.9rem; color: var(--muted); }
+    h2 { margin-bottom: 0.75rem; font-size: 1rem; font-weight: 600; }
+    label { display: block; margin: 0.75rem 0 0.25rem; font-size: 0.85rem; color: var(--muted); }
     input, select, button {
       width: 100%;
       padding: 0.6rem;
-      background: var(--bg);
+      background: #000;
       color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 4px;
-      font-size: 1rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
     }
     button {
       width: auto;
       margin-top: 1rem;
       background: var(--accent);
-      color: #000000;
+      color: #000;
       border: none;
       cursor: pointer;
       font-weight: 500;
+      padding: 0.55rem 1rem;
     }
     button:hover { opacity: 0.85; }
     button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
@@ -60,10 +113,11 @@
       background: #112211;
       color: var(--ok);
       padding: 0.75rem;
-      border-radius: 4px;
+      border-radius: 6px;
       word-break: break-all;
       margin-top: 0.5rem;
       font-family: monospace;
+      font-size: 0.85rem;
     }
     .error { color: var(--danger); margin-top: 0.5rem; }
     .success { color: var(--ok); margin-top: 0.5rem; }
@@ -71,16 +125,17 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 0.5rem 0;
+      padding: 0.6rem 0;
       border-bottom: 1px solid var(--border);
     }
+    .agent:last-child { border-bottom: none; }
     .killed { color: var(--danger); }
     .empty { color: var(--muted); font-style: italic; }
     .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
     .result {
       margin-top: 1rem;
       padding: 0.75rem;
-      border-radius: 4px;
+      border-radius: 6px;
       font-family: monospace;
       font-size: 0.85rem;
       white-space: pre-wrap;
@@ -108,23 +163,35 @@
       background: #000;
       border: 1px solid var(--border);
       padding: 1rem;
-      border-radius: 4px;
+      border-radius: 6px;
       overflow-x: auto;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
+      margin: 0.75rem 0;
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Flaike</h1>
-    <a href="/logout" style="color: var(--muted); text-decoration: none;">Logout</a>
-  </div>
-  <p class="subtitle">Agents get narrow keys. Your real credentials stay on the server. Every action is checked, executed, and logged. Kill any agent instantly.</p>
+  <nav>
+    <a href="/" class="logo">Flaike</a>
+    <div class="nav-right">
+      <a href="/pricing">Pricing</a>
+      <div class="avatar" id="avatar" onclick="toggleDropdown()">A</div>
+      <div class="dropdown" id="dropdown">
+        <a href="/app">Dashboard</a>
+        <a href="#" onclick="alert('Account settings coming soon')">Account</a>
+        <a href="#" onclick="alert('Subscription management coming soon')">Subscription</a>
+        <a href="/logout">Log out</a>
+      </div>
+    </div>
+  </nav>
 
-  <section id="onboarding" style="border-color: #55cc55;">
-    <h2>1. Connect your agent</h2>
-    <p>After you create an agent below, copy this into Claude Desktop, Cursor, or any MCP client. Replace YOUR_AGENT_KEY with the key you get.</p>
-    <pre id="mcp-config">{
+  <div class="container">
+    <p class="subtitle">Agents get narrow keys. Your real credentials stay on the server.</p>
+
+    <section id="onboarding" style="border-color: #333;">
+      <h2>Connect your agent</h2>
+      <p>Create an agent below, then add this to Claude Desktop, Cursor, or any MCP client.</p>
+      <pre id="mcp-config">{
   "mcpServers": {
     "flaike": {
       "url": "https://flaike.org/mcp",
@@ -134,51 +201,65 @@
     }
   }
 }</pre>
-    <button class="secondary" onclick="copyMcp()">Copy config</button>
-    <p class="hint" style="margin-top: 0.5rem;">Then ask the agent to list an S3 bucket or create a GitHub issue. Kill the agent to stop it instantly.</p>
-  </section>
+      <button class="secondary" onclick="copyMcp()">Copy config</button>
+    </section>
 
-  <section>
-    <h2>1. Create an agent</h2>
-    <form id="create-form">
-      <label>Name</label>
-      <input type="text" id="name" required>
-      <label>Owner</label>
-      <input type="text" id="owner" required>
-      <label>System</label>
-      <input type="text" id="system" value="http" placeholder="http, s3, github">
-      <label>Permissions</label>
-      <input type="text" id="perm" value="read" placeholder="read, s3:list, http:get, read:*">
-      <p class="hint">Comma-separated. Examples: read, write, s3:list, get:mybucket/*, *</p>
-      <button type="submit">Create agent</button>
-    </form>
-    <div id="key-display"></div>
-  </section>
+    <section>
+      <h2>Create an agent</h2>
+      <form id="create-form">
+        <label>Name</label>
+        <input type="text" id="name" required>
+        <label>Owner</label>
+        <input type="text" id="owner" required>
+        <label>System</label>
+        <input type="text" id="system" value="http" placeholder="http, s3, github">
+        <label>Permissions</label>
+        <input type="text" id="perm" value="read" placeholder="read, s3:list, http:get, read:*">
+        <p class="hint">Comma-separated. Examples: read, write, s3:list, get:mybucket/*, *</p>
+        <button type="submit">Create agent</button>
+      </form>
+      <div id="key-display"></div>
+    </section>
 
-  <section>
-    <h2>2. Agents</h2>
-    <div id="agents"><p class="empty">None yet.</p></div>
-  </section>
+    <section>
+      <h2>Agents</h2>
+      <div id="agents"><p class="empty">None yet.</p></div>
+    </section>
 
-  <section>
-    <h2>3. Test a call</h2>
-    <label>Agent key</label>
-    <input type="text" id="test-key">
-    <label>Action</label>
-    <input type="text" id="test-action" value="read">
-    <label>Resource</label>
-    <input type="text" id="test-resource" placeholder="https://example.com or bucket/key">
-    <button onclick="testGate()">Send to gate</button>
-    <div id="gate-result"></div>
-  </section>
+    <section>
+      <h2>Test a call</h2>
+      <label>Agent key</label>
+      <input type="text" id="test-key">
+      <label>Action</label>
+      <input type="text" id="test-action" value="read">
+      <label>Resource</label>
+      <input type="text" id="test-resource" placeholder="https://example.com or bucket/key">
+      <button onclick="testGate()">Send to gate</button>
+      <div id="gate-result"></div>
+    </section>
 
-  <section>
-    <h2>4. Log</h2>
-    <button class="secondary" onclick="loadLogs()">Refresh</button>
-    <div id="logs"><p class="empty">No calls yet.</p></div>
-  </section>
+    <section>
+      <h2>Log</h2>
+      <button class="secondary" onclick="loadLogs()">Refresh</button>
+      <div id="logs"><p class="empty">No calls yet.</p></div>
+    </section>
+  </div>
 
   <script>
+    function toggleDropdown() {
+      const d = document.getElementById('dropdown');
+      d.style.display = d.style.display === 'block' ? 'none' : 'block';
+    }
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.nav-right')) document.getElementById('dropdown').style.display = 'none';
+    });
+
+    function copyMcp() {
+      const text = document.getElementById('mcp-config').textContent;
+      navigator.clipboard.writeText(text);
+      alert('Copied');
+    }
+
     async function loadAgents() {
       const res = await fetch('/api/agents');
       if (!res.ok) {
@@ -274,11 +355,6 @@
       }).join('');
     }
 
-    function copyMcp() {
-      const text = document.getElementById('mcp-config').textContent;
-      navigator.clipboard.writeText(text);
-      alert('Copied');
-    }
     loadAgents();
     loadLogs();
   </script>
