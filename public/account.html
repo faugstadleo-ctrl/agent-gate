@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account — Flaike</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --surface: #0a0a0a;
+      --border: #1f1f1f;
+      --text: #ededed;
+      --muted: #888888;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: linear-gradient(160deg, #000000 0%, #0c0c12 45%, #000000 100%); color: var(--text); min-height: 100vh; }
+    nav { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.6); backdrop-filter: blur(12px); }
+    .logo { font-weight: 600; text-decoration: none; color: var(--text); }
+    .content { max-width: 520px; margin: 3rem auto; padding: 0 1.5rem; }
+    h1 { margin-bottom: 1.5rem; font-size: 1.5rem; }
+    section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
+    input { width: 100%; padding: 0.6rem; background: #000; color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
+    button { margin-top: 1rem; padding: 0.55rem 1rem; background: #fff; color: #000; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; }
+    .msg { margin-top: 0.75rem; color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">Flaike</a>
+    <a href="/app" style="color: var(--muted); text-decoration: none; font-size: 0.875rem;">Dashboard</a>
+  </nav>
+  <div class="content">
+    <h1>Account</h1>
+    <section>
+      <form id="account">
+        <label>Username</label>
+        <input id="username" disabled>
+        <label>Email</label>
+        <input id="email" type="email">
+        <label>Business name</label>
+        <input id="business">
+        <button type="submit">Save</button>
+        <div id="msg" class="msg"></div>
+      </form>
+    </section>
+  </div>
+  <script>
+    async function load() {
+      const res = await fetch('/api/me');
+      if (!res.ok) return;
+      const u = await res.json();
+      document.getElementById('username').value = u.username || '';
+      document.getElementById('email').value = u.email || '';
+      document.getElementById('business').value = u.business || '';
+    }
+    document.getElementById('account').onsubmit = async (e) => {
+      e.preventDefault();
+      const res = await fetch('/api/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('email').value,
+          business: document.getElementById('business').value
+        })
+      });
+      document.getElementById('msg').textContent = res.ok ? 'Saved' : 'Failed';
+    };
+    load();
+  </script>
+</body>
+</html>
