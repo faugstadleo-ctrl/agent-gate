@@ -502,7 +502,7 @@ app.post('/api/signup', async (req, res) => {
   if (resend) {
     try {
       const result = await resend.emails.send({
-        from: 'Agent Gate <onboarding@resend.dev>',
+        from: 'Flaike <onboarding@resend.dev>',
         to: email,
         subject: 'Verify your Agent Gate account',
         html: `<p>Click to verify your account:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`
