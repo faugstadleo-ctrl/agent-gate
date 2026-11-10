@@ -161,7 +161,7 @@
 <body>
   <nav>
     <div class="logo">Flaike</div>
-    <div class="nav-links">
+    <div class="nav-links" id="nav-links">
       <a href="#how">How it works</a>
       <a href="/pricing">Pricing</a>
       <a href="/login">Login</a>
@@ -262,6 +262,14 @@
         body: JSON.stringify({ choice })
       });
     }
+  </script>
+
+  <script>
+    fetch('/api/me').then(r => {
+      if (r.ok) {
+        document.getElementById('nav-links').innerHTML = '<a href="/app">Dashboard</a><a href="/logout">Log out</a>';
+      }
+    }).catch(() => {});
   </script>
 </body>
 </html>
