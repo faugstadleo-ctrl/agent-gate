@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Subscription — Flaike</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --surface: #0a0a0a;
+      --border: #1f1f1f;
+      --text: #ededed;
+      --muted: #888888;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: linear-gradient(160deg, #000000 0%, #0c0c12 45%, #000000 100%); color: var(--text); min-height: 100vh; }
+    nav { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.6); backdrop-filter: blur(12px); }
+    .logo { font-weight: 600; text-decoration: none; color: var(--text); }
+    .content { max-width: 520px; margin: 3rem auto; padding: 0 1.5rem; }
+    h1 { margin-bottom: 1.5rem; font-size: 1.5rem; }
+    section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; }
+    .plan { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .status { color: var(--muted); margin-bottom: 1rem; }
+    a.button { display: inline-block; margin-top: 1rem; padding: 0.55rem 1rem; background: #fff; color: #000; text-decoration: none; border-radius: 6px; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">Flaike</a>
+    <a href="/app" style="color: var(--muted); text-decoration: none; font-size: 0.875rem;">Dashboard</a>
+  </nav>
+  <div class="content">
+    <h1>Subscription</h1>
+    <section>
+      <div class="plan" id="plan">Loading…</div>
+      <div class="status" id="status"></div>
+      <a href="/pricing" class="button">Change plan</a>
+    </section>
+  </div>
+  <script>
+    async function load() {
+      const res = await fetch('/api/me');
+      if (!res.ok) return;
+      const u = await res.json();
+      const plan = u.plan || 'starter';
+      document.getElementById('plan').textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+      document.getElementById('status').textContent = plan === 'team' && u.paid ? 'Active' : (plan === 'team' ? 'Not paid' : 'Free');
+    }
+    load();
+  </script>
+</body>
+</html>
