@@ -526,7 +526,6 @@ function requireAuth(req, res, next) {
 }
 
 app.get('/', (req, res) => {
-  if (req.session && req.session.authed) return res.redirect('/app');
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });
 
