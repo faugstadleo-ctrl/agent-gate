@@ -548,6 +548,8 @@ app.get('/verify', (req, res) => {
 });
 app.get('/contact', (req, res) => res.sendFile(path.join(__dirname, 'public', 'contact.html')));
 app.get('/payment', (req, res) => res.sendFile(path.join(__dirname, 'public', 'payment.html')));
+app.get('/account', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'account.html')));
+app.get('/subscription', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'subscription.html')));
 
 app.get('/login', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body{background:#000;color:#e0e0e0;font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}form{background:#111;padding:2.5rem;border-radius:8px;border:1px solid #555;min-width:280px}h2{margin:0 0 1.5rem;font-weight:600}input,button{display:block;margin:0.6rem 0;padding:0.7rem;width:100%;background:#000;color:#e0e0e0;border:1px solid #555;border-radius:4px;font-size:1rem}button{background:#fff;color:#000;border:none;font-weight:500;cursor:pointer}button:hover{opacity:0.9}</style></head><body><form method="POST" action="/login"><h2>Agent Gate</h2><input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required><button>Login</button></form></body></html>`);
@@ -711,6 +713,22 @@ app.post('/api/restore', (req, res) => {
   saveData();
   logAudit(req.session.user, 'restore', {});
   res.json({ message: 'Restored', agents: agents.size, logs: logs.length });
+});
+
+app.get('/api/me', (req, res) => {
+  const user = Array.from(users.values()).find(u => u.username === req.session.user);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  const { password, verifyToken, ...safe } = user;
+  res.json(safe);
+});
+
+app.patch('/api/me', (req, res) => {
+  const user = Array.from(users.values()).find(u => u.username === req.session.user);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  if (req.body.email) user.email = req.body.email;
+  if (req.body.business !== undefined) user.business = req.body.business;
+  saveData();
+  res.json({ ok: true });
 });
 
 app.get('/api/logs', (req, res) => res.json(logs.slice(-100)));
